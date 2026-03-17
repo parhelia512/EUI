@@ -8,8 +8,16 @@ A GLFW + OpenGL demo runtime is available when `EUI_ENABLE_GLFW_OPENGL_BACKEND` 
 
 ## Preview
 
-![Preview](preview/0.jpg)
-![Preview](preview/1.jpg)
+<table>
+  <tr>
+    <td width="50%"><img src="preview/0.jpg" alt="Preview 0" width="100%" /></td>
+    <td width="50%"><img src="preview/1.jpg" alt="Preview 1" width="100%" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="preview/2.jpg" alt="Preview 2" width="100%" /></td>
+    <td width="50%"><img src="preview/3.jpg" alt="Preview 3" width="100%" /></td>
+  </tr>
+</table>
 
 ## Project Analysis (Current Code)
 
@@ -199,6 +207,17 @@ const auto& text_arena = ui.text_arena();
 - `set_next_item_span(k)` lets the next control span `k` columns.
 - Use `row_flex_spacer(keep_trailing_columns)` to push right-side controls.
 - Use `row_skip(k)` to skip fixed columns.
+
+### Sidebar Icon/Text Vertical Alignment
+
+- For left-aligned sidebar buttons, prefix label with `\t` to enable left align with built-in left padding.
+- For icon + text, use **two ASCII spaces** between them (for example `u8"\uE80F  Dashboard"`).
+- EUI will split icon/text and render them separately, which keeps vertical alignment stable.
+
+```cpp
+// Left-aligned nav item with icon + text (stable vertical centering)
+ui.button("\t" u8"\uE80F  Dashboard", eui::ButtonStyle::Secondary, 34.0f);
+```
 
 ### 1) Sidebar + Main Content
 

@@ -8,8 +8,16 @@ EUI 是一个轻量、头文件式（header-only）的 C++ UI 工具包，偏重
 
 ## 预览
 
-![Preview](preview/0.jpg)
-![Preview](preview/1.jpg)
+<table>
+  <tr>
+    <td width="50%"><img src="preview/0.jpg" alt="Preview 0" width="100%" /></td>
+    <td width="50%"><img src="preview/1.jpg" alt="Preview 1" width="100%" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="preview/2.jpg" alt="Preview 2" width="100%" /></td>
+    <td width="50%"><img src="preview/3.jpg" alt="Preview 3" width="100%" /></td>
+  </tr>
+</table>
 
 ## 项目现状分析（基于当前代码）
 
@@ -199,6 +207,17 @@ const auto& text_arena = ui.text_arena();
 - `set_next_item_span(k)` 可让下一个控件跨 `k` 列。
 - 用 `row_flex_spacer(keep_trailing_columns)` 把后面的控件推到右侧。
 - 用 `row_skip(k)` 跳过固定列数。
+
+### 侧边栏图标与文本垂直对齐方案
+
+- 侧边栏按钮如果需要左对齐，请在 `label` 前加 `\t`，会启用左对齐并带左侧内边距。
+- 图标 + 文本请使用 **两个 ASCII 空格** 分隔（例如 `u8"\uE80F  Dashboard"`）。
+- EUI 会把图标和文本拆开分别渲染，垂直居中会稳定很多。
+
+```cpp
+// 左对齐侧边栏项：图标 + 文本，垂直居中更稳定
+ui.button("\t" u8"\uE80F  Dashboard", eui::ButtonStyle::Secondary, 34.0f);
+```
 
 ### 1）侧边栏 + 主内容
 

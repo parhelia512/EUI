@@ -46,7 +46,11 @@ struct LayoutDemoState {
 static void draw_nav_item(eui::Context& ui, LayoutDemoState& state, float h, const char* label,
                           SidebarPage page) {
     const eui::ButtonStyle style = (state.page == page) ? eui::ButtonStyle::Primary : eui::ButtonStyle::Secondary;
-    if (ui.button(label, style, h)) {
+    std::string left_aligned_label;
+    left_aligned_label.reserve(std::char_traits<char>::length(label) + 1u);
+    left_aligned_label.push_back('\t');
+    left_aligned_label += label;
+    if (ui.button(left_aligned_label, style, h)) {
         state.page = page;
     }
 }
@@ -60,13 +64,13 @@ static void draw_sidebar(eui::Context& ui, LayoutDemoState& state, float scale) 
     ui.spacer(dp(10.0f));
 
     ui.label("OVERVIEW", dp(11.0f), true);
-    draw_nav_item(ui, state, item_h, "Dashboard", SidebarPage::Dashboard);
-    draw_nav_item(ui, state, item_h, "Projects", SidebarPage::Projects);
-    draw_nav_item(ui, state, item_h, "Tasks", SidebarPage::Tasks);
+    draw_nav_item(ui, state, item_h, u8"\uE80F  Dashboard", SidebarPage::Dashboard);
+    draw_nav_item(ui, state, item_h, u8"\uE8B7  Projects", SidebarPage::Projects);
+    draw_nav_item(ui, state, item_h, u8"\uE72E  Tasks", SidebarPage::Tasks);
 
     ui.spacer(dp(6.0f));
     ui.label("SYSTEM", dp(11.0f), true);
-    draw_nav_item(ui, state, item_h, "Settings", SidebarPage::Settings);
+    draw_nav_item(ui, state, item_h, u8"\uE713  Settings", SidebarPage::Settings);
 
     ui.spacer(dp(8.0f));
     if (ui.button(state.dark_mode ? "Use Light" : "Use Dark", eui::ButtonStyle::Ghost, item_h)) {
@@ -92,7 +96,7 @@ static void draw_topbar(eui::Context& ui, LayoutDemoState& state, float scale) {
     ui.input_text("", state.search_query, item_h, "Search components, files...");
 
     ui.row_flex_spacer(4, item_h);
-    if (ui.button(state.notifications_on ? "Bell" : "Muted", eui::ButtonStyle::Secondary, item_h)) {
+    if (ui.button(state.notifications_on ? "Notify" : "Muted", eui::ButtonStyle::Secondary, item_h)) {
         state.notifications_on = !state.notifications_on;
     }
 
@@ -144,9 +148,14 @@ static void draw_topbar(eui::Context& ui, LayoutDemoState& state, float scale) {
 static void draw_stats_row(eui::Context& ui, float scale, float progress) {
     const auto dp = [scale](float value) { return value * scale; };
 
-    auto stat_card = [&](const char* title, const char* value, const char* note) {
+    auto stat_card = [&](const char* title, const char* value, const char* note, const char* icon) {
         ui.begin_card("", dp(118.0f), dp(10.0f));
-        ui.label(title, dp(12.0f), true);
+        ui.begin_row(12, dp(6.0f));
+        ui.set_next_item_span(10);
+        ui.label(title, dp(12.0f), true, dp(22.0f));
+        ui.set_next_item_span(1);
+        ui.label(icon, dp(14.0f), true, dp(22.0f));
+        ui.end_row();
         ui.label(value, dp(20.0f), false);
         ui.label(note, dp(12.0f), true);
         ui.progress("", progress, dp(6.0f));
@@ -154,10 +163,10 @@ static void draw_stats_row(eui::Context& ui, float scale, float progress) {
     };
 
     ui.begin_row(4, dp(8.0f));
-    stat_card("Total Revenue", "$45,231.89", "+20.1% from last month");
-    stat_card("Active Projects", "+12", "+2 since yesterday");
-    stat_card("Tasks Completed", "142", "+19% from last week");
-    stat_card("Active Now", "+573", "+201 since last hour");
+    stat_card("Total Revenue", "$45,231.89", "+20.1% from last month", u8"\uE71A");
+    stat_card("Active Projects", "+12", "+2 since yesterday", u8"\uE8B7");
+    stat_card("Tasks Completed", "142", "+19% from last week", u8"\uE72E");
+    stat_card("Active Now", "+573", "+201 since last hour", u8"\uE716");
     ui.end_row();
 }
 

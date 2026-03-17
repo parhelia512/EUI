@@ -513,10 +513,15 @@ public:
         const Rect rect = next_rect(height);
         const bool hovered = rect.contains(input_.mouse_x, input_.mouse_y);
         const bool held = hovered && input_.mouse_down;
+        std::string_view draw_label = label;
+        const bool force_left_align = !draw_label.empty() && draw_label.front() == '\t';
+        if (force_left_align) {
+            draw_label.remove_prefix(1);
+        }
         bool icon_like = false;
-        if (!label.empty() && label.size() <= 4u) {
+        if (!draw_label.empty() && draw_label.size() <= 4u) {
             icon_like = true;
-            for (char ch : label) {
+            for (char ch : draw_label) {
                 const unsigned char uch = static_cast<unsigned char>(ch);
                 if (uch < 0x80u && std::isalnum(uch)) {
                     icon_like = false;
@@ -531,19 +536,19 @@ public:
         bool icon_text_combo = false;
         std::string_view icon_part{};
         std::string_view text_part{};
-        if (!label.empty() && static_cast<unsigned char>(label.front()) >= 0x80u) {
-            std::size_t split = label.find("  ");
+        if (!draw_label.empty() && static_cast<unsigned char>(draw_label.front()) >= 0x80u) {
+            std::size_t split = draw_label.find("  ");
             if (split == std::string_view::npos) {
-                split = label.find(' ');
+                split = draw_label.find(' ');
             }
             if (split != std::string_view::npos) {
                 std::size_t text_start = split;
-                while (text_start < label.size() && label[text_start] == ' ') {
+                while (text_start < draw_label.size() && draw_label[text_start] == ' ') {
                     text_start += 1u;
                 }
-                if (split > 0u && text_start < label.size()) {
-                    icon_part = label.substr(0u, split);
-                    text_part = label.substr(text_start);
+                if (split > 0u && text_start < draw_label.size()) {
+                    icon_part = draw_label.substr(0u, split);
+                    text_part = draw_label.substr(text_start);
                     icon_text_combo = true;
                 }
             }
@@ -568,26 +573,38 @@ public:
         add_filled_rect(rect, fill, theme_.radius);
         add_outline_rect(rect, style == ButtonStyle::Primary ? theme_.primary : theme_.outline, theme_.radius);
         if (icon_text_combo) {
-            const float pad = std::clamp(rect.h * 0.24f, 8.0f, 14.0f);
+            const float pad = force_left_align ? std::clamp(rect.h * 0.24f, 9.0f, 14.0f)
+                                               : std::clamp(rect.h * 0.24f, 8.0f, 14.0f);
+            const float icon_size = force_left_align ? std::clamp(rect.h * 0.46f, 11.0f, 22.0f)
+                                                     : std::clamp(rect.h * 0.60f, 13.0f, 34.0f);
+            const float icon_w = force_left_align ? std::max(icon_size + 2.0f, rect.h * 0.44f)
+                                                  : std::max(14.0f, rect.h - pad * 0.2f);
             const Rect icon_rect{
                 rect.x + pad,
                 rect.y,
-                std::max(14.0f, rect.h - pad * 0.2f),
+                icon_w,
                 rect.h,
             };
-            const float icon_size = std::clamp(rect.h * 0.60f, 13.0f, 34.0f);
-            const float text_x = icon_rect.x + icon_rect.w + std::max(4.0f, pad * 0.45f);
+            const float gap = force_left_align ? std::max(6.0f, pad * 0.58f) : std::max(4.0f, pad * 0.45f);
+            const float text_x = icon_rect.x + icon_rect.w + gap;
             const Rect text_rect{
                 text_x,
                 rect.y,
                 std::max(0.0f, rect.x + rect.w - text_x - pad),
                 rect.h,
             };
-            const float combo_text_size = std::clamp(rect.h * 0.35f, 11.0f, 24.0f);
+            const float combo_text_size = force_left_align ? std::clamp(rect.h * 0.37f, 12.0f, 24.0f)
+                                                           : std::clamp(rect.h * 0.35f, 11.0f, 24.0f);
             add_text(icon_part, icon_rect, text_color, icon_size, TextAlign::Center);
             add_text(text_part, text_rect, text_color, combo_text_size, TextAlign::Left);
         } else {
-            add_text(label, Rect{rect.x, rect.y, rect.w, rect.h}, text_color, text_size, TextAlign::Center);
+            if (force_left_align) {
+                const float pad = std::clamp(rect.h * 0.24f, 8.0f, 14.0f);
+                add_text(draw_label, Rect{rect.x + pad, rect.y, std::max(0.0f, rect.w - pad * 1.5f), rect.h},
+                         text_color, text_size, TextAlign::Left);
+            } else {
+                add_text(draw_label, Rect{rect.x, rect.y, rect.w, rect.h}, text_color, text_size, TextAlign::Center);
+            }
         }
 
         return hovered && input_.mouse_pressed;
