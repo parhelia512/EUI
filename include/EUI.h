@@ -1119,8 +1119,11 @@ public:
         bool draw_background{true};
     };
 
-    bool begin_scroll_area(std::string_view label, float height,
-                           const ScrollAreaOptions& options = ScrollAreaOptions{}) {
+    bool begin_scroll_area(std::string_view label, float height) {
+        return begin_scroll_area(label, height, ScrollAreaOptions{});
+    }
+
+    bool begin_scroll_area(std::string_view label, float height, const ScrollAreaOptions& options) {
         const Rect outer = next_rect(std::max(40.0f, height));
         const float pad = std::clamp(options.padding, 2.0f, 24.0f);
         const bool show_scrollbar = options.show_scrollbar;
@@ -2625,6 +2628,10 @@ struct TextAreaState {
         return i;
     }
 
+    static bool is_private_use_codepoint_measure(std::uint32_t cp) {
+        return cp >= 0xE000u && cp <= 0xF8FFu;
+    }
+
 #if defined(_WIN32) && defined(EUI_ENABLE_GLFW_OPENGL_BACKEND)
     static std::wstring utf8_to_wide_measure(std::string_view text) {
         if (text.empty()) {
@@ -2665,10 +2672,6 @@ struct TextAreaState {
         out[0] = L'\0';
         out[1] = L'\0';
         return 0;
-    }
-
-    static bool is_private_use_codepoint_measure(std::uint32_t cp) {
-        return cp >= 0xE000u && cp <= 0xF8FFu;
     }
 
     HFONT ensure_text_measure_font(bool icon_font, int px) const {
@@ -2726,8 +2729,8 @@ struct TextAreaState {
 #endif
     }
 
-    bool measure_font_has_glyph(HDC hdc, HFONT font, std::uint32_t cp) const {
 #if defined(_WIN32) && defined(EUI_ENABLE_GLFW_OPENGL_BACKEND)
+    bool measure_font_has_glyph(HDC hdc, HFONT font, std::uint32_t cp) const {
         if (hdc == nullptr || font == nullptr) {
             return false;
         }
@@ -2743,13 +2746,8 @@ struct TextAreaState {
             SelectObject(hdc, old);
         }
         return glyph_query != GDI_ERROR && glyph_index != 0xFFFFu;
-#else
-        (void)hdc;
-        (void)font;
-        (void)cp;
-        return false;
-#endif
     }
+#endif
 
     float measure_text_width_runtime(std::uint32_t cp, float font_size) const {
 #if defined(_WIN32) && defined(EUI_ENABLE_GLFW_OPENGL_BACKEND)
