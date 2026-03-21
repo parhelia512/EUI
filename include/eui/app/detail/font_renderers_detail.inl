@@ -7,8 +7,10 @@ public:
           text_font_weight_(std::clamp(options.text_font_weight, 100, 900)),
           icon_family_(utf8_to_wide(options.icon_font_family != nullptr ? options.icon_font_family
                                                                        : "Font Awesome 7 Free Solid")),
-          text_font_file_(utf8_to_wide(options.text_font_file != nullptr ? options.text_font_file : "")),
-          icon_font_file_(utf8_to_wide(resolve_icon_font_file_path(options.icon_font_file))),
+          text_font_file_path_(options.text_font_file != nullptr ? options.text_font_file : ""),
+          icon_font_file_path_(resolve_icon_font_file_path(options.icon_font_file)),
+          text_font_file_(utf8_to_wide(text_font_file_path_)),
+          icon_font_file_(utf8_to_wide(icon_font_file_path_)),
           enable_icon_fallback_(options.enable_icon_font_fallback) {}
 
     ~Win32FontRenderer() {
@@ -23,6 +25,11 @@ public:
         }
         for (const std::wstring& path : loaded_private_fonts_) {
             RemoveFontResourceExW(path.c_str(), FR_PRIVATE, nullptr);
+        }
+        for (HANDLE handle : loaded_private_font_mem_handles_) {
+            if (handle != nullptr) {
+                RemoveFontMemResourceEx(handle);
+            }
         }
     }
 
@@ -180,17 +187,29 @@ private:
         }
         private_fonts_loaded_ = true;
 
-        auto load_private = [&](const std::wstring& path) {
-            if (path.empty()) {
+        auto load_private = [&](const std::string& utf8_path, const std::wstring& wide_path) {
+            if (utf8_path.empty() && wide_path.empty()) {
                 return;
             }
-            const int added = AddFontResourceExW(path.c_str(), FR_PRIVATE, nullptr);
+            if (auto embedded = eui::detail::context_resolve_memory_asset_uri(utf8_path)) {
+                DWORD loaded_count = 0u;
+                HANDLE handle = AddFontMemResourceEx(const_cast<unsigned char*>(embedded->data()),
+                                                     static_cast<DWORD>(embedded->size()), nullptr, &loaded_count);
+                if (handle != nullptr && loaded_count > 0u) {
+                    loaded_private_font_mem_handles_.push_back(handle);
+                }
+                return;
+            }
+            if (wide_path.empty()) {
+                return;
+            }
+            const int added = AddFontResourceExW(wide_path.c_str(), FR_PRIVATE, nullptr);
             if (added > 0) {
-                loaded_private_fonts_.push_back(path);
+                loaded_private_fonts_.push_back(wide_path);
             }
         };
-        load_private(text_font_file_);
-        load_private(icon_font_file_);
+        load_private(text_font_file_path_, text_font_file_);
+        load_private(icon_font_file_path_, icon_font_file_);
     }
 
     FontInstance* ensure_font(bool icon_font, int px, HDC hdc) const {
@@ -419,6 +438,8 @@ private:
     std::wstring text_family_{};
     int text_font_weight_{FW_NORMAL};
     std::wstring icon_family_{};
+    std::string text_font_file_path_{};
+    std::string icon_font_file_path_{};
     std::wstring text_font_file_{};
     std::wstring icon_font_file_{};
     bool enable_icon_fallback_{true};
@@ -426,6 +447,7 @@ private:
     mutable bool private_fonts_loaded_{false};
     mutable std::unordered_map<std::string, FontInstance> fonts_{};
     mutable std::vector<std::wstring> loaded_private_fonts_{};
+    mutable std::vector<HANDLE> loaded_private_font_mem_handles_{};
 };
 #endif
 
@@ -741,11 +763,17 @@ private:
         if (path.empty()) {
             return false;
         }
+        if (eui::detail::context_is_memory_asset_uri(path)) {
+            return eui::detail::context_resolve_memory_asset_uri(path) != nullptr;
+        }
         std::ifstream ifs(path, std::ios::binary);
         return static_cast<bool>(ifs);
     }
 
     static std::vector<unsigned char> read_file(const std::string& path) {
+        if (auto embedded = eui::detail::context_resolve_memory_asset_uri(path)) {
+            return *embedded;
+        }
         std::ifstream ifs(path, std::ios::binary);
         if (!ifs) {
             return {};

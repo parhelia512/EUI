@@ -2,9 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
 
 #include "eui/graphics.h"
 
@@ -435,5 +440,79 @@ struct DrawCommand {
     bool has_clip{false};
     std::uint64_t hash{0ull};
 };
+
+namespace detail {
+
+inline constexpr std::string_view k_memory_asset_scheme = "asset://";
+
+inline bool context_is_memory_asset_uri(std::string_view uri) {
+    return uri.size() >= k_memory_asset_scheme.size() &&
+           uri.substr(0u, k_memory_asset_scheme.size()) == k_memory_asset_scheme;
+}
+
+inline std::string context_memory_asset_name(std::string_view uri) {
+    if (!context_is_memory_asset_uri(uri)) {
+        return {};
+    }
+    return std::string(uri.substr(k_memory_asset_scheme.size()));
+}
+
+inline std::unordered_map<std::string, std::shared_ptr<std::vector<unsigned char>>>& context_memory_asset_registry() {
+    static std::unordered_map<std::string, std::shared_ptr<std::vector<unsigned char>>> registry{};
+    return registry;
+}
+
+inline void context_register_memory_asset(std::string_view name, const void* data, std::size_t size) {
+    if (name.empty()) {
+        return;
+    }
+
+    auto& registry = context_memory_asset_registry();
+    const std::string key(name);
+    if (data == nullptr || size == 0u) {
+        registry.erase(key);
+        return;
+    }
+
+    auto bytes = std::make_shared<std::vector<unsigned char>>(size);
+    std::memcpy(bytes->data(), data, size);
+    registry[key] = std::move(bytes);
+}
+
+inline std::shared_ptr<std::vector<unsigned char>> context_find_memory_asset(std::string_view name) {
+    if (name.empty()) {
+        return {};
+    }
+
+    auto& registry = context_memory_asset_registry();
+    const auto it = registry.find(std::string(name));
+    if (it == registry.end()) {
+        return {};
+    }
+    return it->second;
+}
+
+inline std::shared_ptr<std::vector<unsigned char>> context_resolve_memory_asset_uri(std::string_view uri) {
+    if (!context_is_memory_asset_uri(uri)) {
+        return {};
+    }
+    return context_find_memory_asset(uri.substr(k_memory_asset_scheme.size()));
+}
+
+}  // namespace detail
+
+inline void register_memory_asset(std::string_view name, const void* data, std::size_t size) {
+    detail::context_register_memory_asset(name, data, size);
+}
+
+inline bool has_memory_asset(std::string_view name) {
+    return detail::context_find_memory_asset(name) != nullptr;
+}
+
+inline std::string memory_asset_uri(std::string_view name) {
+    std::string uri(detail::k_memory_asset_scheme);
+    uri.append(name.data(), name.size());
+    return uri;
+}
 
 }  // namespace eui

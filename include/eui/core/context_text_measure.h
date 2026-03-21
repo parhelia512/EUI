@@ -283,6 +283,9 @@ inline std::vector<unsigned char> context_read_file_bytes(const std::string& pat
     if (path.empty()) {
         return {};
     }
+    if (auto embedded = context_resolve_memory_asset_uri(path)) {
+        return *embedded;
+    }
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
         return {};
@@ -305,6 +308,9 @@ inline std::shared_ptr<std::vector<unsigned char>> context_load_shared_font_blob
 #if EUI_ENABLE_STB_TRUETYPE
     if (path.empty()) {
         return {};
+    }
+    if (auto embedded = context_resolve_memory_asset_uri(path)) {
+        return embedded;
     }
 
     static std::unordered_map<std::string, std::weak_ptr<std::vector<unsigned char>>> shared_blobs{};

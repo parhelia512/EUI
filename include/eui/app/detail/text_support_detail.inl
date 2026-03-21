@@ -2,6 +2,9 @@ inline bool font_file_exists(const std::string& path) {
     if (path.empty()) {
         return false;
     }
+    if (eui::detail::context_is_memory_asset_uri(path)) {
+        return eui::detail::context_resolve_memory_asset_uri(path) != nullptr;
+    }
     std::ifstream ifs(path, std::ios::binary);
     return static_cast<bool>(ifs);
 }

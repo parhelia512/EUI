@@ -276,13 +276,55 @@ std::filesystem::path find_repo_asset(const std::filesystem::path& relative) {
     return {};
 }
 
-std::string repo_asset_path(const std::filesystem::path& relative) {
-    const std::filesystem::path found = find_repo_asset(relative);
-    return found.empty() ? relative.string() : found.string();
+#if defined(_WIN32)
+std::filesystem::path executable_directory() {
+    std::array<wchar_t, 32768> buffer{};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0 || length >= buffer.size()) {
+        return std::filesystem::current_path();
+    }
+    return std::filesystem::path(std::wstring(buffer.data(), length)).parent_path();
+}
+#else
+std::filesystem::path executable_directory() {
+    return std::filesystem::current_path();
+}
+#endif
+
+std::filesystem::path find_runtime_asset(const std::filesystem::path& relative) {
+    namespace fs = std::filesystem;
+    const fs::path base = executable_directory();
+    const fs::path filename = relative.filename();
+
+    const std::array<fs::path, 4> candidates{{
+        base / filename,
+        base / relative,
+        base / "assets" / filename,
+        base / "assets" / relative,
+    }};
+
+    for (const fs::path& candidate : candidates) {
+        if (!candidate.empty() && fs::exists(candidate)) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
+std::filesystem::path find_gallery_asset(const std::filesystem::path& relative) {
+    if (const std::filesystem::path runtime = find_runtime_asset(relative); !runtime.empty()) {
+        return runtime;
+    }
+    return find_repo_asset(relative);
+}
+
+std::string gallery_asset_path(const std::filesystem::path& relative) {
+    const std::filesystem::path found = find_gallery_asset(relative);
+    return found.empty() ? relative.filename().string() : found.string();
 }
 
 std::filesystem::path find_icon_library_json() {
-    return find_repo_asset(std::filesystem::path("examples") / "EUI_gallery_icons.json");
+    return find_gallery_asset(std::filesystem::path("examples") / "EUI_gallery_icons.json");
 }
 
 std::vector<IconLibraryEntry> fallback_icon_library() {
@@ -1922,11 +1964,11 @@ void draw_settings_page(UI& ui, const eui::InputState& input, GalleryState& stat
 
 void draw_image_page(UI& ui, const GalleryState& state, const Rect& rect, float scale) {
     const GalleryPalette palette = make_gallery_palette(state);
-    static const std::string hero_image = repo_asset_path(std::filesystem::path("preview") / "0.jpg");
-    static const std::string cover_image = repo_asset_path(std::filesystem::path("preview") / "1.jpg");
-    static const std::string contain_image = repo_asset_path(std::filesystem::path("preview") / "2.jpg");
-    static const std::string stretch_image = repo_asset_path(std::filesystem::path("preview") / "3.jpg");
-    static const std::string center_image = repo_asset_path(std::filesystem::path("preview") / "4.jpg");
+    static const std::string hero_image = gallery_asset_path(std::filesystem::path("preview") / "0.jpg");
+    static const std::string cover_image = gallery_asset_path(std::filesystem::path("preview") / "1.jpg");
+    static const std::string contain_image = gallery_asset_path(std::filesystem::path("preview") / "2.jpg");
+    static const std::string stretch_image = gallery_asset_path(std::filesystem::path("preview") / "3.jpg");
+    static const std::string center_image = gallery_asset_path(std::filesystem::path("preview") / "4.jpg");
 
     ui.view(rect)
         .column()
@@ -2054,7 +2096,7 @@ void draw_image_page(UI& ui, const GalleryState& state, const Rect& rect, float 
 void draw_about_page(UI& ui, const eui::InputState& input, const GalleryState& state, const Rect& rect, float scale) {
     const GalleryPalette palette = make_gallery_palette(state);
     const std::uint32_t accent = accent_hex(state);
-    static const std::string avatar_image = repo_asset_path(std::filesystem::path("examples") / "avtar.jpg");
+    static const std::string avatar_image = gallery_asset_path(std::filesystem::path("examples") / "avtar.jpg");
     const Rect content = inset_rect(rect, 32.0f * scale);
     const float hero_w = std::min(content.w, 720.0f * scale);
     const float hero_h = std::min(content.h * 0.48f, 272.0f * scale);
@@ -2345,6 +2387,8 @@ void draw_stage(UI& ui, const eui::InputState& input, GalleryState& state, const
 
 int main() {
     GalleryState state{};
+    const std::string icon_font_source =
+        gallery_asset_path(std::filesystem::path("include") / "Font Awesome 7 Free-Solid-900.otf");
 
     eui::app::AppOptions options{};
     options.title = "EUI Gallery";
@@ -2356,7 +2400,7 @@ int main() {
     options.text_font_family = "Segoe UI";
     options.text_font_weight = 600;
     options.icon_font_family = "Font Awesome 7 Free Solid";
-    options.icon_font_file = "include/Font Awesome 7 Free-Solid-900.otf";
+    options.icon_font_file = icon_font_source.c_str();
 
     return eui::app::run(
         [&](eui::app::FrameContext frame) {

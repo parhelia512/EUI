@@ -1123,33 +1123,57 @@ private:
             return false;
         }
 
-        std::wstring wide_path = utf8_to_wide(source);
-        if (wide_path.empty()) {
-            wide_path.assign(source.begin(), source.end());
-        }
-        if (wide_path.empty()) {
-            return false;
-        }
-
         IWICBitmapDecoder* decoder = nullptr;
         IWICBitmapFrameDecode* frame = nullptr;
         IWICFormatConverter* converter = nullptr;
+        IWICStream* stream = nullptr;
+        std::shared_ptr<std::vector<unsigned char>> embedded{};
         bool ok = false;
 
-        if (SUCCEEDED(wic_factory_->CreateDecoderFromFilename(wide_path.c_str(), nullptr, GENERIC_READ,
-                                                              WICDecodeMetadataCacheOnLoad, &decoder)) &&
+        if ((embedded = eui::detail::context_resolve_memory_asset_uri(source)) != nullptr) {
+            if (SUCCEEDED(wic_factory_->CreateStream(&stream)) &&
+                SUCCEEDED(stream->InitializeFromMemory(
+                    embedded->data(), static_cast<DWORD>(std::min<std::size_t>(embedded->size(), 0xffffffffu)))) &&
+                SUCCEEDED(wic_factory_->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnLoad, &decoder)) &&
+                SUCCEEDED(decoder->GetFrame(0u, &frame)) &&
+                SUCCEEDED(wic_factory_->CreateFormatConverter(&converter)) &&
+                SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr,
+                                                0.0, WICBitmapPaletteTypeCustom))) {
+                UINT w = 0u;
+                UINT h = 0u;
+                if (SUCCEEDED(converter->GetSize(&w, &h)) && w > 0u && h > 0u) {
+                    pixels.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4u);
+                    if (SUCCEEDED(converter->CopyPixels(nullptr, w * 4u, static_cast<UINT>(pixels.size()), pixels.data()))) {
+                        width = static_cast<int>(w);
+                        height = static_cast<int>(h);
+                        ok = true;
+                    }
+                }
+            }
+        } else {
+            std::wstring wide_path = utf8_to_wide(source);
+            if (wide_path.empty()) {
+                wide_path.assign(source.begin(), source.end());
+            }
+            if (wide_path.empty()) {
+                return false;
+            }
+
+            if (SUCCEEDED(wic_factory_->CreateDecoderFromFilename(wide_path.c_str(), nullptr, GENERIC_READ,
+                                                                  WICDecodeMetadataCacheOnLoad, &decoder)) &&
             SUCCEEDED(decoder->GetFrame(0u, &frame)) &&
             SUCCEEDED(wic_factory_->CreateFormatConverter(&converter)) &&
             SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr,
                                             0.0, WICBitmapPaletteTypeCustom))) {
-            UINT w = 0u;
-            UINT h = 0u;
-            if (SUCCEEDED(converter->GetSize(&w, &h)) && w > 0u && h > 0u) {
-                pixels.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4u);
-                if (SUCCEEDED(converter->CopyPixels(nullptr, w * 4u, static_cast<UINT>(pixels.size()), pixels.data()))) {
-                    width = static_cast<int>(w);
-                    height = static_cast<int>(h);
-                    ok = true;
+                UINT w = 0u;
+                UINT h = 0u;
+                if (SUCCEEDED(converter->GetSize(&w, &h)) && w > 0u && h > 0u) {
+                    pixels.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4u);
+                    if (SUCCEEDED(converter->CopyPixels(nullptr, w * 4u, static_cast<UINT>(pixels.size()), pixels.data()))) {
+                        width = static_cast<int>(w);
+                        height = static_cast<int>(h);
+                        ok = true;
+                    }
                 }
             }
         }
@@ -1159,6 +1183,9 @@ private:
         }
         if (frame != nullptr) {
             frame->Release();
+        }
+        if (stream != nullptr) {
+            stream->Release();
         }
         if (decoder != nullptr) {
             decoder->Release();
