@@ -4,10 +4,16 @@ project(EUI VERSION 0.1.0 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-option(EUI_BUILD_EXAMPLES "Build GLFW + OpenGL demo when dependencies exist" ON)
+option(EUI_BUILD_EXAMPLES "Build example applications when dependencies exist" ON)
 option(EUI_STRICT_WARNINGS "Enable strict warnings on local targets" ON)
-option(EUI_FETCH_GLFW_FROM_GIT "Auto-fetch GLFW from Git if it is not available locally" ON)
+set(EUI_WINDOW_BACKEND "AUTO" CACHE STRING "Convenience window backend mode: AUTO, GLFW, SDL2, or ALL")
+set_property(CACHE EUI_WINDOW_BACKEND PROPERTY STRINGS AUTO GLFW SDL2 ALL)
+option(EUI_FETCH_GLFW_FROM_GIT "Auto-fetch GLFW from Git if it is not available locally" OFF)
+option(EUI_FETCH_SDL2_FROM_GIT "Auto-fetch SDL2 from Git if it is not available locally" OFF)
+option(EUI_ENABLE_GLFW_WINDOW_BACKEND "Enable GLFW window backend for app/examples when available" ON)
+option(EUI_ENABLE_SDL2_WINDOW_BACKEND "Enable SDL2 window backend for app/examples when available" ON)
 set(EUI_GLFW_GIT_TAG "3.4" CACHE STRING "GLFW Git tag used by FetchContent")
+set(EUI_SDL2_GIT_TAG "SDL2" CACHE STRING "SDL2 Git ref used by FetchContent")
 
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -20,6 +26,9 @@ target_include_directories(eui INTERFACE
     $<INSTALL_INTERFACE:include>
 )
 target_compile_features(eui INTERFACE cxx_std_17)
+if(WIN32)
+    target_link_libraries(eui INTERFACE ole32 windowscodecs)
+endif()
 
 if(EUI_STRICT_WARNINGS)
     if(MSVC)
@@ -31,13 +40,23 @@ endif()
 
 set(EUI_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/EUI")
 
-install(TARGETS eui EXPORT EUITargets)
-install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-install(FILES
+set(EUI_DOC_FILES "")
+foreach(eui_doc_candidate
     "${CMAKE_CURRENT_SOURCE_DIR}/readme.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/readme.zh-CN.md"
-    DESTINATION "${CMAKE_INSTALL_DOCDIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/README.zh-CN.md"
 )
+    if(EXISTS "${eui_doc_candidate}")
+        list(APPEND EUI_DOC_FILES "${eui_doc_candidate}")
+    endif()
+endforeach()
+
+install(TARGETS eui EXPORT EUITargets)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+if(EUI_DOC_FILES)
+    install(FILES ${EUI_DOC_FILES} DESTINATION "${CMAKE_INSTALL_DOCDIR}")
+endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/docs")
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/docs/" DESTINATION "${CMAKE_INSTALL_DOCDIR}/docs")
 endif()
@@ -67,127 +86,8 @@ install(FILES
 )
 
 if(EUI_BUILD_EXAMPLES)
-    include(FetchContent)
-
-    set(EUI_OPENGL_TARGET "")
-    find_package(OpenGL QUIET)
-    if(TARGET OpenGL::GL)
-        set(EUI_OPENGL_TARGET OpenGL::GL)
-    elseif(WIN32)
-        # On Windows OpenGL comes from the system SDK.
-        set(EUI_OPENGL_TARGET opengl32)
-    elseif(APPLE)
-        find_library(EUI_OPENGL_FRAMEWORK OpenGL)
-        if(EUI_OPENGL_FRAMEWORK)
-            set(EUI_OPENGL_TARGET ${EUI_OPENGL_FRAMEWORK})
-        endif()
-    endif()
-
-    find_package(glfw3 CONFIG QUIET)
-    if(NOT TARGET glfw AND NOT TARGET glfw3::glfw AND NOT TARGET glfw3)
-        find_package(glfw3 QUIET)
-    endif()
-
-    set(EUI_GLFW_TARGET "")
-    if(TARGET glfw)
-        set(EUI_GLFW_TARGET glfw)
-    elseif(TARGET glfw3::glfw)
-        set(EUI_GLFW_TARGET glfw3::glfw)
-    elseif(TARGET glfw3)
-        set(EUI_GLFW_TARGET glfw3)
-    endif()
-
-    if(NOT EUI_GLFW_TARGET AND EUI_FETCH_GLFW_FROM_GIT)
-        message(STATUS "GLFW not found locally. Fetching from Git (${EUI_GLFW_GIT_TAG})...")
-
-        set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable GLFW docs" FORCE)
-        set(GLFW_BUILD_TESTS OFF CACHE BOOL "Disable GLFW tests" FORCE)
-        set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "Disable GLFW examples" FORCE)
-        set(GLFW_INSTALL OFF CACHE BOOL "Disable GLFW install target" FORCE)
-
-        FetchContent_Declare(
-            glfw
-            GIT_REPOSITORY https://github.com/glfw/glfw.git
-            GIT_TAG ${EUI_GLFW_GIT_TAG}
-            GIT_SHALLOW TRUE
-        )
-        FetchContent_MakeAvailable(glfw)
-
-        if(TARGET glfw)
-            set(EUI_GLFW_TARGET glfw)
-        elseif(TARGET glfw3::glfw)
-            set(EUI_GLFW_TARGET glfw3::glfw)
-        elseif(TARGET glfw3)
-            set(EUI_GLFW_TARGET glfw3)
-        endif()
-    endif()
-
-    if(EUI_OPENGL_TARGET AND EUI_GLFW_TARGET)
-        set(EUI_EXAMPLE_TARGETS "")
-
-        add_executable(eui_demo WIN32 examples/basic_demo.cpp)
-        target_link_libraries(eui_demo PRIVATE EUI::eui ${EUI_GLFW_TARGET} ${EUI_OPENGL_TARGET})
-        target_compile_definitions(eui_demo PRIVATE EUI_ENABLE_GLFW_OPENGL_BACKEND=1)
-        if(MSVC)
-            target_compile_options(eui_demo PRIVATE /W4)
-        else()
-            target_compile_options(eui_demo PRIVATE -Wall -Wextra -Wpedantic)
-        endif()
-        list(APPEND EUI_EXAMPLE_TARGETS eui_demo)
-
-        add_executable(eui_calculator_demo WIN32 examples/calculator_demo.cpp)
-        target_link_libraries(eui_calculator_demo PRIVATE EUI::eui ${EUI_GLFW_TARGET} ${EUI_OPENGL_TARGET})
-        target_compile_definitions(eui_calculator_demo PRIVATE EUI_ENABLE_GLFW_OPENGL_BACKEND=1)
-        if(MSVC)
-            target_compile_options(eui_calculator_demo PRIVATE /W4)
-        else()
-            target_compile_options(eui_calculator_demo PRIVATE -Wall -Wextra -Wpedantic)
-        endif()
-        list(APPEND EUI_EXAMPLE_TARGETS eui_calculator_demo)
-
-        add_executable(eui_layout_examples_demo WIN32 examples/layout_examples_demo.cpp)
-        target_link_libraries(eui_layout_examples_demo PRIVATE EUI::eui ${EUI_GLFW_TARGET} ${EUI_OPENGL_TARGET})
-        target_compile_definitions(eui_layout_examples_demo PRIVATE EUI_ENABLE_GLFW_OPENGL_BACKEND=1)
-        if(MSVC)
-            target_compile_options(eui_layout_examples_demo PRIVATE /W4)
-        else()
-            target_compile_options(eui_layout_examples_demo PRIVATE -Wall -Wextra -Wpedantic)
-        endif()
-        list(APPEND EUI_EXAMPLE_TARGETS eui_layout_examples_demo)
-
-        add_executable(eui_minimal_demo WIN32 examples/minimal_demo.cpp)
-        target_link_libraries(eui_minimal_demo PRIVATE EUI::eui ${EUI_GLFW_TARGET} ${EUI_OPENGL_TARGET})
-        target_compile_definitions(eui_minimal_demo PRIVATE EUI_ENABLE_GLFW_OPENGL_BACKEND=1)
-        if(MSVC)
-            target_compile_options(eui_minimal_demo PRIVATE /W4)
-        else()
-            target_compile_options(eui_minimal_demo PRIVATE -Wall -Wextra -Wpedantic)
-        endif()
-        list(APPEND EUI_EXAMPLE_TARGETS eui_minimal_demo)
-
-        add_executable(eui_sidebar_navigation_demo WIN32 examples/sidebar_navigation_demo.cpp)
-        target_link_libraries(eui_sidebar_navigation_demo PRIVATE EUI::eui ${EUI_GLFW_TARGET} ${EUI_OPENGL_TARGET})
-        target_compile_definitions(eui_sidebar_navigation_demo PRIVATE EUI_ENABLE_GLFW_OPENGL_BACKEND=1)
-        if(MSVC)
-            target_compile_options(eui_sidebar_navigation_demo PRIVATE /W4)
-        else()
-            target_compile_options(eui_sidebar_navigation_demo PRIVATE -Wall -Wextra -Wpedantic)
-        endif()
-        list(APPEND EUI_EXAMPLE_TARGETS eui_sidebar_navigation_demo)
-
-        install(TARGETS ${EUI_EXAMPLE_TARGETS}
-            RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-        )
-    elseif(NOT EUI_OPENGL_TARGET)
-        message(WARNING
-            "Skipping eui_demo: OpenGL library not found on this platform."
-        )
-    elseif(NOT EUI_GLFW_TARGET)
-        message(WARNING
-            "Skipping eui_demo: GLFW not found and Git fetch is disabled/failed. "
-            "Enable EUI_FETCH_GLFW_FROM_GIT or install GLFW locally."
-        )
-    endif()
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/EUIExamples.cmake")
+    eui_configure_examples()
 endif()
 
 set(CPACK_PACKAGE_NAME "EUI")
@@ -195,7 +95,14 @@ set(CPACK_PACKAGE_VENDOR "EUI")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Header-only immediate-mode C++ UI toolkit")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "EUI")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/readme.md")
+set(EUI_CPACK_README "")
+foreach(eui_doc_candidate IN LISTS EUI_DOC_FILES)
+    set(EUI_CPACK_README "${eui_doc_candidate}")
+    break()
+endforeach()
+if(EUI_CPACK_README)
+    set(CPACK_RESOURCE_FILE_README "${EUI_CPACK_README}")
+endif()
 if(NOT DEFINED CPACK_PACKAGE_FILE_NAME)
     set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
 endif()
