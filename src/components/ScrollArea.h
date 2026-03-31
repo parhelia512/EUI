@@ -40,6 +40,7 @@ public:
 
     bool wantsContinuousUpdate() const override {
         return isDragging_ ||
+               isContentDragging_ ||
                (accentAnim_ > 0.001f && accentAnim_ < 0.999f) ||
                accentPulse_ > 0.01f;
     }
@@ -80,18 +81,39 @@ public:
             State.mouseX >= frame.x + frame.width - trackHitWidth && State.mouseX <= frame.x + frame.width &&
             State.mouseY >= frame.y && State.mouseY <= frame.y + frame.height;
 
-        if (State.mouseClicked && primitive_.enabled && (hoveredThumb || hoveredTrack) && maxScroll > 0.0f) {
-            isDragging_ = true;
-            dragGrabOffsetY_ = hoveredThumb ? (State.mouseY - thumb.y) : (thumb.height * 0.5f);
+        if (State.mouseClicked && primitive_.enabled && hovered_ && maxScroll > 0.0f) {
+            if (hoveredThumb) {
+                isDragging_ = true;
+                isContentDragging_ = false;
+                dragGrabOffsetY_ = std::clamp(State.mouseY - thumb.y, 0.0f, thumb.height);
+            } else if (hoveredTrack) {
+                const float travel = std::max(0.0f, frame.height - thumb.height);
+                float nextOffset = 0.0f;
+                if (travel > 0.0f) {
+                    const float localThumbY = std::clamp(State.mouseY - thumb.height * 0.5f - frame.y, 0.0f, travel);
+                    nextOffset = (localThumbY / travel) * maxScroll;
+                }
+                scrollOffsetY_ = std::clamp(nextOffset, 0.0f, maxScroll);
+                isDragging_ = true;
+                isContentDragging_ = false;
+                dragGrabOffsetY_ = thumb.height * 0.5f;
+            } else {
+                isDragging_ = false;
+                isContentDragging_ = true;
+                contentDragStartMouseY_ = State.mouseY;
+                contentDragStartOffsetY_ = scrollOffsetY_;
+            }
             requestVisualRepaint();
         }
 
-        if (!State.mouseDown && isDragging_) {
+        if (!State.mouseDown && (isDragging_ || isContentDragging_)) {
             isDragging_ = false;
+            isContentDragging_ = false;
             requestVisualRepaint();
         }
 
         bool scrollChanged = false;
+
         if (isDragging_ && maxScroll > 0.0f) {
             State.scrollConsumed = true;
             const float travel = std::max(0.0f, frame.height - thumb.height);
@@ -100,6 +122,17 @@ public:
                 const float localThumbY = std::clamp(State.mouseY - dragGrabOffsetY_ - frame.y, 0.0f, travel);
                 nextOffset = (localThumbY / travel) * maxScroll;
             }
+            if (std::abs(nextOffset - scrollOffsetY_) > 0.01f) {
+                scrollOffsetY_ = nextOffset;
+                scrollChanged = true;
+                requestVisualRepaint();
+            }
+        }
+
+        if (isContentDragging_ && maxScroll > 0.0f) {
+            State.scrollConsumed = true;
+            const float dragDeltaY = State.mouseY - contentDragStartMouseY_;
+            const float nextOffset = std::clamp(contentDragStartOffsetY_ - dragDeltaY, 0.0f, maxScroll);
             if (std::abs(nextOffset - scrollOffsetY_) > 0.01f) {
                 scrollOffsetY_ = nextOffset;
                 scrollChanged = true;
@@ -121,7 +154,7 @@ public:
             accentPulse_ = 1.0f;
         }
 
-        const float targetAccent = (hoveredThumb || isDragging_ || accentPulse_ > 0.01f) ? 1.0f : 0.0f;
+        const float targetAccent = (hoveredThumb || isDragging_ || isContentDragging_ || accentPulse_ > 0.01f) ? 1.0f : 0.0f;
         if (std::abs(accentAnim_ - targetAccent) > 0.001f) {
             accentAnim_ = Lerp(accentAnim_, targetAccent, State.deltaTime * 14.0f);
             if (std::abs(accentAnim_ - targetAccent) < 0.01f) {
@@ -197,7 +230,10 @@ private:
     float scrollOffsetY_ = 0.0f;
     bool hovered_ = false;
     bool isDragging_ = false;
+    bool isContentDragging_ = false;
     float dragGrabOffsetY_ = 0.0f;
+    float contentDragStartMouseY_ = 0.0f;
+    float contentDragStartOffsetY_ = 0.0f;
     float accentAnim_ = 0.0f;
     float accentPulse_ = 0.0f;
 };

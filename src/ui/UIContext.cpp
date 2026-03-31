@@ -34,6 +34,22 @@ int LayerDrawPriority(RenderLayer layer) {
     }
 }
 
+bool NodeDrawBefore(const UINode* lhs, const UINode* rhs) {
+    const int lhsLayer = LayerDrawPriority(lhs->renderLayer());
+    const int rhsLayer = LayerDrawPriority(rhs->renderLayer());
+    if (lhsLayer != rhsLayer) {
+        return lhsLayer < rhsLayer;
+    }
+    const bool lhsExplicitZ = lhs->hasExplicitZIndex();
+    const bool rhsExplicitZ = rhs->hasExplicitZIndex();
+    if (lhsExplicitZ || rhsExplicitZ) {
+        if (lhs->zIndex() != rhs->zIndex()) {
+            return lhs->zIndex() < rhs->zIndex();
+        }
+    }
+    return false;
+}
+
 float ClampDimension(float value) {
     return std::max(0.0f, value);
 }
@@ -70,6 +86,20 @@ void FinalizeUIBuild(UIContext& context, UINode& node, const LayoutBuildInfo& in
 void UIContext::begin(const std::string& pageId) {
     pageId_ = pageId;
     ++composeStamp_;
+
+    // Garbage collection for Immediate Mode UI
+    // Remove nodes that haven't been seen in the last 120 frames (approx 1-2 seconds)
+    // This is crucial for Virtual Lists and dynamic data where IDs change frequently
+    for (auto it = nodes_.begin(); it != nodes_.end(); ) {
+        if (it->second && !it->second->composedIn(composeStamp_) && 
+           (it->second->composedIn(0) || composeStamp_ - it->second->composeStamp() > 120)) {
+            Renderer::ReleaseCachedSurface(it->second->key());
+            it = nodes_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     order_.clear();
     drawOrder_.clear();
     drawOrderStamp_ = 0;
@@ -140,13 +170,14 @@ void UIContext::popClip() {
 }
 
 float UIContext::pushScrollArea(const std::string& id, float x, float y, float width, float height,
-                                float contentHeight, float scrollStep) {
+                                float contentHeight, float scrollStep, RenderLayer scrollbarLayer) {
     ScrollAreaNode& node = acquire<ScrollAreaNode>(id);
     UIPrimitive& primitive = node.primitive();
     primitive.x = x;
     primitive.y = y;
     primitive.width = width;
     primitive.height = height;
+    primitive.renderLayer = scrollbarLayer;
 
     node.trackComposeValue("contentHeight", contentHeight);
     node.trackComposeValue("scrollStep", scrollStep);
@@ -418,8 +449,14 @@ void UIContext::resolveLayout(LayoutState& layout, const RectFrame& frame) {
 }
 
 void UIContext::update() {
+    if (drawOrderStamp_ != composeStamp_) {
+        drawOrder_ = order_;
+        std::stable_sort(drawOrder_.begin(), drawOrder_.end(), NodeDrawBefore);
+        drawOrderStamp_ = composeStamp_;
+    }
+
     bool dirtyLayers[static_cast<std::size_t>(RenderLayer::Count)] = {};
-    for (UINode* node : order_) {
+    auto updateNode = [this, &dirtyLayers](UINode* node) {
         applyRuntimeContext(node);
         const bool isVisible = node->visible();
         if (isVisible) {
@@ -443,6 +480,16 @@ void UIContext::update() {
         if (node->consumeRecomposeRequest()) {
             needsRecompose_ = true;
         }
+    };
+
+    if (State.inputPriorityByZ) {
+        for (auto it = drawOrder_.rbegin(); it != drawOrder_.rend(); ++it) {
+            updateNode(*it);
+        }
+    } else {
+        for (UINode* node : order_) {
+            updateNode(node);
+        }
     }
 
     for (std::size_t index = 0; index < static_cast<std::size_t>(RenderLayer::Count); ++index) {
@@ -461,14 +508,7 @@ void UIContext::render() {
 void UIContext::draw() {
     if (drawOrderStamp_ != composeStamp_) {
         drawOrder_ = order_;
-        std::stable_sort(drawOrder_.begin(), drawOrder_.end(), [](const UINode* lhs, const UINode* rhs) {
-            const int lhsLayer = LayerDrawPriority(lhs->renderLayer());
-            const int rhsLayer = LayerDrawPriority(rhs->renderLayer());
-            if (lhsLayer != rhsLayer) {
-                return lhsLayer < rhsLayer;
-            }
-            return lhs->zIndex() < rhs->zIndex();
-        });
+        std::stable_sort(drawOrder_.begin(), drawOrder_.end(), NodeDrawBefore);
         drawOrderStamp_ = composeStamp_;
     }
 

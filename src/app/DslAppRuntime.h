@@ -22,7 +22,14 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4005)
+#endif
 #include <Windows.h>
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 #include <shellapi.h>
 #include <urlmon.h>
 #endif
@@ -130,6 +137,15 @@ inline void UseDslLightTheme(const Color& background = Color(1.0f, 1.0f, 1.0f, 1
     SetDslBackground(background);
 }
 
+inline void UseDslDarkTheme(const Color& background = Color(0.0f, 0.0f, 0.0f, 1.0f)) {
+    CurrentTheme = &DarkTheme;
+    SetDslBackground(background);
+}
+
+inline void UseDslInputPriorityByZ(bool enabled = true) {
+    State.inputPriorityByZ = enabled;
+}
+
 struct DslApiTextOptions {
     std::string fallback = "";
     float refreshSeconds = 0.0f;
@@ -172,15 +188,34 @@ inline std::string TrimSpace(std::string value) {
     return value.substr(begin);
 }
 
+inline std::string GetEnvVar(const char* key) {
+    if (key == nullptr || key[0] == '\0') {
+        return {};
+    }
+#ifdef _WIN32
+    char* buffer = nullptr;
+    std::size_t size = 0;
+    if (_dupenv_s(&buffer, &size, key) != 0 || buffer == nullptr) {
+        return {};
+    }
+    std::string value(buffer);
+    std::free(buffer);
+    return value;
+#else
+    const char* value = std::getenv(key);
+    return value != nullptr ? std::string(value) : std::string{};
+#endif
+}
+
 inline std::string BuildTempTextFilePath(const std::string& key) {
-    const char* tempDir = std::getenv("TMPDIR");
-    if (tempDir == nullptr || tempDir[0] == '\0') {
-        tempDir = std::getenv("TEMP");
+    std::string tempDir = GetEnvVar("TMPDIR");
+    if (tempDir.empty()) {
+        tempDir = GetEnvVar("TEMP");
     }
-    if (tempDir == nullptr || tempDir[0] == '\0') {
-        tempDir = std::getenv("TMP");
+    if (tempDir.empty()) {
+        tempDir = GetEnvVar("TMP");
     }
-    if (tempDir == nullptr || tempDir[0] == '\0') {
+    if (tempDir.empty()) {
 #ifdef _WIN32
         tempDir = ".";
 #else
