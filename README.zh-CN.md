@@ -5,7 +5,20 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/sudoevolve/EUI-NEO/actions/workflows/release.yml"><img alt="Release Build" src="https://github.com/sudoevolve/EUI-NEO/actions/workflows/release.yml/badge.svg"></a>
+  <a href="https://github.com/sudoevolve/EUI-NEO/releases"><img alt="Release" src="https://img.shields.io/github/v/release/sudoevolve/EUI-NEO?include_prereleases&sort=semver"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue"></a>
+  <img alt="C++17" src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white">
+  <img alt="CMake 3.14+" src="https://img.shields.io/badge/CMake-3.14%2B-064F8C?logo=cmake&logoColor=white">
+  <img alt="OpenGL" src="https://img.shields.io/badge/OpenGL-rendering-5586A4?logo=opengl&logoColor=white">
+  <img alt="GLFW" src="https://img.shields.io/badge/GLFW-windowing-111111">
+  <a href="https://github.com/sudoevolve/EUI-NEO/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/sudoevolve/EUI-NEO?style=flat"></a>
+</p>
+
+<p align="center">
   <a href="README.md">English</a>
+  ·
+  <a href="https://sudoevolve.github.io/pages/eui-neo.html">官网</a>
 </p>
 
 EUI-NEO 是一个基于 C++17、OpenGL、GLFW 的声明式 UI 实验项目。页面通过 `core::dsl::Ui` 描述结构、样式、交互回调和目标状态，`core::dsl::Runtime` 负责布局、动画、事件、脏区渲染、framebuffer cache 和底层 primitive 同步。
@@ -73,3 +86,9 @@ docs/         项目实现文档
 - 图表：`linechart` / `lineChart`、`barchart` / `barChart`、`piechart` / `pieChart`
 
 组件只组合 DSL 树，不直接持有 OpenGL primitive。业务状态仍然放在页面或业务层，通过 builder 参数传入当前值，再从回调写回 next value。
+
+## Star History
+
+<a href="https://www.star-history.com/#sudoevolve/EUI-NEO&Date">
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=sudoevolve/EUI-NEO&type=Date">
+</a>

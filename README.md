@@ -5,7 +5,20 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/sudoevolve/EUI-NEO/actions/workflows/release.yml"><img alt="Release Build" src="https://github.com/sudoevolve/EUI-NEO/actions/workflows/release.yml/badge.svg"></a>
+  <a href="https://github.com/sudoevolve/EUI-NEO/releases"><img alt="Release" src="https://img.shields.io/github/v/release/sudoevolve/EUI-NEO?include_prereleases&sort=semver"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue"></a>
+  <img alt="C++17" src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white">
+  <img alt="CMake 3.14+" src="https://img.shields.io/badge/CMake-3.14%2B-064F8C?logo=cmake&logoColor=white">
+  <img alt="OpenGL" src="https://img.shields.io/badge/OpenGL-rendering-5586A4?logo=opengl&logoColor=white">
+  <img alt="GLFW" src="https://img.shields.io/badge/GLFW-windowing-111111">
+  <a href="https://github.com/sudoevolve/EUI-NEO/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/sudoevolve/EUI-NEO?style=flat"></a>
+</p>
+
+<p align="center">
   <a href="README.zh-CN.md">简体中文</a>
+  ·
+  <a href="https://sudoevolve.github.io/pages/eui-neo.html">Website</a>
 </p>
 
 EUI-NEO is a C++17, OpenGL, and GLFW declarative UI experiment. Pages describe structure, styling, interaction callbacks, and target state through `core::dsl::Ui`; `core::dsl::Runtime` handles layout, animation, events, dirty-region rendering, framebuffer cache, and synchronization with low-level primitives.
@@ -73,3 +86,9 @@ docs/         Implementation notes and API documentation
 - Charts: `linechart` / `lineChart`, `barchart` / `barChart`, `piechart` / `pieChart`
 
 Components only compose DSL trees. They do not own OpenGL primitives directly. Business state stays in the page or application layer: pass the current value into the builder, then write the next value back from callbacks.
+
+## Star History
+
+<a href="https://www.star-history.com/#sudoevolve/EUI-NEO&Date">
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=sudoevolve/EUI-NEO&type=Date">
+</a>
