@@ -711,11 +711,13 @@ public:
 
     TextBuilder& icon(unsigned int codepoint) {
         element_->text = utf8(codepoint);
+        element_->fontFamily = "Icon";
         return *this;
     }
 
     TextBuilder& icon(const std::string& value) {
         element_->text = value;
+        element_->fontFamily = "Icon";
         return *this;
     }
 

@@ -30,6 +30,8 @@ namespace core {
 namespace {
 
 constexpr int SdfPadding = 5;
+constexpr const char* kDefaultUiFontFile = "JingNanJunJunTi-JinNanJunJunTi-Bold-2.ttf";
+constexpr const char* kDefaultIconFontFile = "Font Awesome 7 Free-Solid-900.otf";
 
 struct FontFace {
     std::string path;
@@ -299,6 +301,14 @@ std::string resolveProjectAssetPath(const std::string& filename) {
     return (sourceRoot / "assets" / filename).string();
 }
 
+std::string resolveDefaultUiFontPath() {
+    return resolveProjectAssetPath(kDefaultUiFontFile);
+}
+
+std::string resolveDefaultIconFontPath() {
+    return resolveProjectAssetPath(kDefaultIconFontFile);
+}
+
 std::string resolveFontFilePath(const std::string& path) {
     const std::filesystem::path raw(path);
     if (const std::string existing = existingPath(raw); !existing.empty()) {
@@ -398,8 +408,8 @@ std::shared_ptr<FontInfoHolder> loadSharedFontStack(const std::string& fontPath,
     holder->faces.push_back(std::move(primary));
 
     const std::string assetFallbackPaths[] = {
-        resolveProjectAssetPath("Font Awesome 7 Free-Solid-900.otf"),
-        resolveProjectAssetPath("YouSheBiaoTiHei-2.ttf")
+        resolveDefaultIconFontPath(),
+        resolveDefaultUiFontPath()
     };
 
     for (const std::string& fallbackPath : assetFallbackPaths) {
@@ -1031,13 +1041,14 @@ std::string TextPrimitive::resolveFontPath(const std::string& fontFamily, int fo
         return resolveFontFilePath(fontFamily);
     }
 
-    if (fontFamily == "YouSheBiaoTiHei" || fontFamily == "YouShe" || fontFamily == "Title") {
-        return resolveProjectAssetPath("YouSheBiaoTiHei-2.ttf");
+    if (fontFamily == "YouSheBiaoTiHei" || fontFamily == "YouShe" || fontFamily == "Title" ||
+        fontFamily == "PingFang" || fontFamily == "PingFang SC") {
+        return resolveDefaultUiFontPath();
     }
 
     if (fontFamily == "FontAwesome" || fontFamily == "Font Awesome" ||
         fontFamily == "Font Awesome 7 Free" || fontFamily == "Icon") {
-        return resolveProjectAssetPath("Font Awesome 7 Free-Solid-900.otf");
+        return resolveDefaultIconFontPath();
     }
 
 #ifdef _WIN32
@@ -1048,12 +1059,12 @@ std::string TextPrimitive::resolveFontPath(const std::string& fontFamily, int fo
         return "C:/Windows/Fonts/simhei.ttf";
     }
     if (fontWeight >= 600) {
-        return resolveProjectAssetPath("YouSheBiaoTiHei-2.ttf");
+        return resolveDefaultUiFontPath();
     }
-    return resolveProjectAssetPath("YouSheBiaoTiHei-2.ttf");
+    return resolveDefaultUiFontPath();
 #else
     (void)fontWeight;
-    return resolveProjectAssetPath("YouSheBiaoTiHei-2.ttf");
+    return resolveDefaultUiFontPath();
 #endif
 }
 
