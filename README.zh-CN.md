@@ -21,7 +21,7 @@
   <a href="https://sudoevolve.github.io/pages/eui-neo.html">官网</a>
 </p>
 
-EUI-NEO 是一个基于 C++17、OpenGL、GLFW 的声明式 UI 实验项目。页面通过 `core::dsl::Ui` 描述结构、样式、交互回调和目标状态，`core::dsl::Runtime` 负责布局、动画、事件、脏区渲染、framebuffer cache 和底层 primitive 同步。
+EUI-NEO 是一个基于 C++17、OpenGL 和 GLFW 的跨平台高性能轻量级 UI 框架，低占用、开箱即用。
 
 ## 预览
 
