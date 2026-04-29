@@ -384,7 +384,7 @@ UiState& state() {
 components::theme::ThemeColorTokens tokens() {
     return {
         components::theme::color(0.07f, 0.075f, 0.08f),
-        components::theme::color(0.14f, 0.68f, 0.56f),
+        components::theme::defaultPrimary(),
         components::theme::color(0.12f, 0.125f, 0.135f),
         components::theme::color(0.18f, 0.18f, 0.19f),
         components::theme::color(0.23f, 0.23f, 0.24f),
@@ -1457,9 +1457,9 @@ void drawHeader(core::dsl::Ui& ui, float width) {
                 .content([&] {
                     ui.rect("header.badge.bg")
                         .size(220.0f, 38.0f)
-                        .color(color(0.09f, 0.20f, 0.18f, 1.0f))
+                        .color(components::theme::withAlpha(tokens().primary, 0.20f))
                         .radius(999.0f)
-                        .border(1.0f, color(0.18f, 0.54f, 0.46f, 0.72f))
+                        .border(1.0f, components::theme::withAlpha(tokens().primary, 0.68f))
                         .build();
 
                     ui.text("header.badge.text")
@@ -1467,7 +1467,7 @@ void drawHeader(core::dsl::Ui& ui, float width) {
                         .text("single EXE")
                         .fontSize(15.0f)
                         .lineHeight(18.0f)
-                        .color(color(0.66f, 0.96f, 0.86f, 1.0f))
+                        .color(color(0.86f, 0.91f, 1.0f, 1.0f))
                         .horizontalAlign(core::HorizontalAlign::Center)
                         .verticalAlign(core::VerticalAlign::Center)
                         .build();
@@ -1481,15 +1481,11 @@ void drawHeader(core::dsl::Ui& ui, float width) {
 
 const DslAppConfig& dslAppConfig() {
     runPackedPayloadIfPresent();
-    static const DslAppConfig config = {
-        "EUI Box Packager",
-        "packager",
-        {0.07f, 0.075f, 0.08f, 1.0f},
-        1440,
-        960,
-        false,
-        0.0
-    };
+    static const DslAppConfig config = DslAppConfig{}
+        .title("EUI Box Packager")
+        .pageId("packager")
+        .clearColor({0.07f, 0.075f, 0.08f, 1.0f})
+        .windowSize(1440, 960);
     return config;
 }
 

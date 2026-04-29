@@ -41,7 +41,7 @@ int sampleMonth = 4;
 int sampleDay = 28;
 int sampleHour = 9;
 int sampleMinute = 30;
-core::Color sampleColor = {0.22f, 0.50f, 0.88f, 1.0f};
+core::Color sampleColor = components::theme::defaultPrimary();
 bool sampleDateOpen = false;
 bool sampleTimeOpen = false;
 bool sampleColorOpen = false;
@@ -1637,16 +1637,13 @@ void composeContent(core::dsl::Ui& ui, float width, float height) {
 } // namespace
 
 const DslAppConfig& dslAppConfig() {
-    static DslAppConfig config = {
-        "EUI Gallery",
-        "gallery",
-        {0.07f, 0.08f, 0.10f, 1.0f},
-        1440,
-        1100,
-        false,
-        galleryFrameRateLimit()
-    };
-    config.fps = galleryFrameRateLimit();
+    static DslAppConfig config = DslAppConfig{}
+        .title("EUI Gallery")
+        .pageId("gallery")
+        .clearColor({0.07f, 0.08f, 0.10f, 1.0f})
+        .windowSize(1440, 1100)
+        .fps(galleryFrameRateLimit());
+    config.fps(galleryFrameRateLimit());
     return config;
 }
 

@@ -7,6 +7,7 @@
 #include "3rd/stb_image.h"
 #include "core/dsl_runtime.h"
 #include "core/network.h"
+#include "core/text.h"
 
 #include <filesystem>
 #include <string>
@@ -15,14 +16,41 @@
 namespace app {
 
 struct DslAppConfig {
-    const char* title = "App";
-    const char* pageId = "app";
-    core::Color clearColor = {0.16f, 0.18f, 0.20f, 1.0f};
-    int windowWidth = 800;
-    int windowHeight = 600;
-    bool showFrameCountInTitle = false;
-    double fps = 0.0;
-    const char* iconPath = "assets/icon.png";
+    const char* titleValue = "App";
+    const char* pageIdValue = "app";
+    core::Color clearColorValue = {0.16f, 0.18f, 0.20f, 1.0f};
+    int windowWidthValue = 800;
+    int windowHeightValue = 600;
+    bool showFrameCountInTitleValue = false;
+    double fpsValue = 0.0;
+    const char* iconPathValue = "assets/icon.png";
+    const char* textFontFileValue = "";
+    const char* iconFontFileValue = "";
+
+    DslAppConfig& title(const char* value) { titleValue = value; return *this; }
+    DslAppConfig& pageId(const char* value) { pageIdValue = value; return *this; }
+    DslAppConfig& clearColor(const core::Color& value) { clearColorValue = value; return *this; }
+    DslAppConfig& background(const core::Color& value) { return clearColor(value); }
+    DslAppConfig& windowSize(int width, int height) {
+        windowWidthValue = width;
+        windowHeightValue = height;
+        return *this;
+    }
+    DslAppConfig& windowWidth(int value) { windowWidthValue = value; return *this; }
+    DslAppConfig& windowHeight(int value) { windowHeightValue = value; return *this; }
+    DslAppConfig& showFrameCountInTitle(bool value = true) {
+        showFrameCountInTitleValue = value;
+        return *this;
+    }
+    DslAppConfig& fps(double value) { fpsValue = value; return *this; }
+    DslAppConfig& iconPath(const char* value) { iconPathValue = value; return *this; }
+    DslAppConfig& textFont(const char* value) { textFontFileValue = value; return *this; }
+    DslAppConfig& iconFont(const char* value) { iconFontFileValue = value; return *this; }
+    DslAppConfig& fonts(const char* textFont, const char* iconFont = "") {
+        textFontFileValue = textFont;
+        iconFontFileValue = iconFont;
+        return *this;
+    }
 };
 
 const DslAppConfig& dslAppConfig();
@@ -77,7 +105,7 @@ inline void applyWindowIcon(GLFWwindow* window) {
         return;
     }
 
-    const std::string iconPath = resolveIconPath(dslAppConfig().iconPath);
+    const std::string iconPath = resolveIconPath(dslAppConfig().iconPathValue);
     if (iconPath.empty()) {
         return;
     }
@@ -105,26 +133,31 @@ inline void applyWindowIcon(GLFWwindow* window) {
 } // namespace detail
 
 const char* windowTitle() {
-    return dslAppConfig().title;
+    return dslAppConfig().titleValue;
 }
 
 bool showFrameCountInTitle() {
-    return dslAppConfig().showFrameCountInTitle;
+    return dslAppConfig().showFrameCountInTitleValue;
 }
 
 double frameRateLimit() {
-    return dslAppConfig().fps;
+    return dslAppConfig().fpsValue;
 }
 
 int initialWindowWidth() {
-    return dslAppConfig().windowWidth;
+    return dslAppConfig().windowWidthValue;
 }
 
 int initialWindowHeight() {
-    return dslAppConfig().windowHeight;
+    return dslAppConfig().windowHeightValue;
 }
 
 bool initialize(GLFWwindow* window) {
+    const DslAppConfig& config = dslAppConfig();
+    core::TextPrimitive::setDefaultFontFiles(
+        config.textFontFileValue != nullptr ? config.textFontFileValue : "",
+        config.iconFontFileValue != nullptr ? config.iconFontFileValue : "");
+
     detail::DslAppState& state = detail::dslAppState();
     if (!state.iconApplied) {
         detail::applyWindowIcon(window);
@@ -144,7 +177,7 @@ bool update(GLFWwindow* window, float deltaSeconds, int windowWidth, int windowH
     detail::DslAppState& state = detail::dslAppState();
 
     const auto composeFrame = [&] {
-        detail::dslRuntime().compose(config.pageId, logicalWidth, logicalHeight, [](core::dsl::Ui& ui, const core::dsl::Screen& screen) {
+        detail::dslRuntime().compose(config.pageIdValue, logicalWidth, logicalHeight, [](core::dsl::Ui& ui, const core::dsl::Screen& screen) {
             compose(ui, screen);
         });
         state.composed = true;
@@ -182,7 +215,7 @@ void render(int windowWidth, int windowHeight, float dpiScale) {
         return;
     }
 
-    const core::Color clearColor = dslAppConfig().clearColor;
+    const core::Color clearColor = dslAppConfig().clearColorValue;
     detail::dslRuntime().render(windowWidth, windowHeight, dpiScale, clearColor);
 }
 

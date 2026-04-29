@@ -51,6 +51,20 @@ void compose(core::dsl::Ui& ui, const core::dsl::Screen& screen);
 - 按屏幕刷新率主动节流
 - 无动画时等待事件休眠
 
+`DslAppConfig` 推荐使用链式写法，配置项名会直接写在调用里。它也支持为单个 app 覆盖默认字体：
+
+```cpp
+static const DslAppConfig config = DslAppConfig{}
+    .title("Clock")
+    .pageId("clock")
+    .clearColor({0.965f, 0.966f, 0.970f, 1.0f})
+    .windowSize(1600, 1080)
+    .fps(90.0)
+    .textFont("YouSheBiaoTiHei-2.ttf");
+```
+
+不设置 `.textFont(...)` 时使用 `core/text.cpp` 顶部的全局默认文本字体；不设置 `.iconFont(...)` 时使用全局默认图标字体。
+
 ## 布局 DSL
 
 容器：
@@ -189,6 +203,8 @@ Text 支持：
 .verticalAlign(...)
 .lineHeight(...)
 ```
+
+`.icon(...)` 会自动使用图标字体；图标字体默认来自 `core/text.cpp`，也可以通过配置里的 `.iconFont(...)` 按 app 覆盖。
 
 `ui.label(id)` 是 `ui.text(id)` 的别名。
 

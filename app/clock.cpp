@@ -648,16 +648,14 @@ void composeCards(core::dsl::Ui& ui, float x, float y, float width, const Palett
 } // namespace
 
 const DslAppConfig& dslAppConfig() {
-    static DslAppConfig config = {
-        "Clock",
-        "clock",
-        {0.965f, 0.966f, 0.970f, 1.0f},
-        1600,
-        1080,
-        false,
-        90.0
-    };
-    config.clearColor = palette().bg;
+    static DslAppConfig config = DslAppConfig{}
+        .title("Clock")
+        .pageId("clock")
+        .clearColor({0.965f, 0.966f, 0.970f, 1.0f})
+        .windowSize(1600, 1080)
+        .fps(90.0)
+        .textFont("YouSheBiaoTiHei-2.ttf");
+    config.clearColor(palette().bg);
     return config;
 }
 

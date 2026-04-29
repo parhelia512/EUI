@@ -5,13 +5,11 @@
 namespace app {
 
 const DslAppConfig& dslAppConfig() {
-    static const DslAppConfig config = {
-        "Hello EUI", // windowtitle
-        "demo", // pageid
-        {0.16f, 0.18f, 0.20f, 1.0f}, // bgcolor
-        800, // window width
-        600 // window height
-    };
+    static const DslAppConfig config = DslAppConfig{}
+        .title("Hello EUI")
+        .pageId("demo")
+        .clearColor({0.16f, 0.18f, 0.20f, 1.0f})
+        .windowSize(800, 600);
     return config;
 }
 

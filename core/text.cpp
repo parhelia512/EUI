@@ -29,7 +29,7 @@ namespace core {
 
 namespace {
 
-constexpr int SdfPadding = 5;
+constexpr int SdfPadding = 8;
 constexpr const char* kDefaultUiFontFile = "JingNanJunJunTi-JinNanJunJunTi-Bold-2.ttf";
 constexpr const char* kDefaultIconFontFile = "Font Awesome 7 Free-Solid-900.otf";
 
@@ -262,6 +262,18 @@ std::string existingPath(const std::filesystem::path& path) {
     return {};
 }
 
+std::string& defaultUiFontFileOverride() {
+    static std::string value;
+    return value;
+}
+
+std::string& defaultIconFontFileOverride() {
+    static std::string value;
+    return value;
+}
+
+std::string resolveFontFilePath(const std::string& path);
+
 std::filesystem::path executableDirectory() {
 #ifdef _WIN32
     std::vector<char> buffer(MAX_PATH);
@@ -302,11 +314,13 @@ std::string resolveProjectAssetPath(const std::string& filename) {
 }
 
 std::string resolveDefaultUiFontPath() {
-    return resolveProjectAssetPath(kDefaultUiFontFile);
+    const std::string& override = defaultUiFontFileOverride();
+    return override.empty() ? resolveProjectAssetPath(kDefaultUiFontFile) : resolveFontFilePath(override);
 }
 
 std::string resolveDefaultIconFontPath() {
-    return resolveProjectAssetPath(kDefaultIconFontFile);
+    const std::string& override = defaultIconFontFileOverride();
+    return override.empty() ? resolveProjectAssetPath(kDefaultIconFontFile) : resolveFontFilePath(override);
 }
 
 std::string resolveFontFilePath(const std::string& path) {
@@ -649,6 +663,11 @@ float TextPrimitive::measureTextWidth(const std::string& text,
         width += static_cast<float>(advance) * face->scale;
     }
     return width;
+}
+
+void TextPrimitive::setDefaultFontFiles(const std::string& textFontFile, const std::string& iconFontFile) {
+    defaultUiFontFileOverride() = textFontFile;
+    defaultIconFontFileOverride() = iconFontFile;
 }
 
 void TextPrimitive::render(int windowWidth, int windowHeight) {
@@ -1041,8 +1060,11 @@ std::string TextPrimitive::resolveFontPath(const std::string& fontFamily, int fo
         return resolveFontFilePath(fontFamily);
     }
 
-    if (fontFamily == "YouSheBiaoTiHei" || fontFamily == "YouShe" || fontFamily == "Title" ||
-        fontFamily == "PingFang" || fontFamily == "PingFang SC") {
+    if (fontFamily == "YouSheBiaoTiHei" || fontFamily == "YouShe") {
+        return resolveFontFilePath("YouSheBiaoTiHei-2.ttf");
+    }
+
+    if (fontFamily == "Title" || fontFamily == "PingFang" || fontFamily == "PingFang SC") {
         return resolveDefaultUiFontPath();
     }
 

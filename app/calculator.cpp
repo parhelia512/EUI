@@ -267,15 +267,12 @@ void key(core::dsl::Ui& ui, const std::string& id, const std::string& label,
 } // namespace
 
 const DslAppConfig& dslAppConfig() {
-    static const DslAppConfig config = {
-        "Calculator",
-        "calculator",
-        kBg,
-        430,
-        760,
-        false,
-        90.0
-    };
+    static const DslAppConfig config = DslAppConfig{}
+        .title("Calculator")
+        .pageId("calculator")
+        .clearColor(kBg)
+        .windowSize(430, 760)
+        .fps(90.0);
     return config;
 }
 

@@ -60,6 +60,10 @@ inline core::Color color(float r, float g, float b, float a = 1.0f) {
     return {r, g, b, a};
 }
 
+inline core::Color defaultPrimary(float a = 1.0f) {
+    return color(56.0f / 255.0f, 113.0f / 255.0f, 224.0f / 255.0f, a);
+}
+
 inline core::Color withAlpha(core::Color value, float alpha) {
     value.a = std::clamp(alpha, 0.0f, 1.0f);
     return value;
@@ -73,7 +77,7 @@ inline core::Color withOpacity(core::Color value, float opacity) {
 inline ThemeColorTokens light() {
     return {
         color(0.95f, 0.95f, 0.97f),
-        color(0.20f, 0.50f, 0.90f),
+        defaultPrimary(),
         color(1.00f, 1.00f, 1.00f),
         color(0.90f, 0.90f, 0.90f),
         color(0.80f, 0.80f, 0.80f),
@@ -86,7 +90,7 @@ inline ThemeColorTokens light() {
 inline ThemeColorTokens dark() {
     return {
         color(0.10f, 0.10f, 0.12f),
-        color(0.30f, 0.60f, 1.00f),
+        defaultPrimary(),
         color(0.15f, 0.15f, 0.18f),
         color(0.25f, 0.25f, 0.28f),
         color(0.35f, 0.35f, 0.38f),
