@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cmath>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -74,7 +75,10 @@ public:
         if (labels_.empty()) {
             labels_ = {"Blue", "Green", "Orange", "Pink"};
         }
-        const float total = valueTotal();
+        AnimState& anim = animStateFor(id_);
+        syncAnimation(anim);
+        const std::vector<float>& displayValues = anim.display;
+        const float total = valueTotal(displayValues);
         float startAngle = -1.57079632679f;
 
         ui_.stack(id_)
@@ -93,7 +97,6 @@ public:
                     .y(18.0f)
                     .size(std::max(0.0f, width_ - titleX * 2.0f), 28.0f)
                     .text(title_)
-                    .customFont("YouSheBiaoTiHei")
                     .fontSize(22.0f)
                     .lineHeight(26.0f)
                     .color(style_.title)
@@ -101,8 +104,8 @@ public:
 
                 std::vector<TooltipItem> tooltips;
                 tooltips.reserve(values_.size());
-                for (int index = 0; index < static_cast<int>(values_.size()); ++index) {
-                    const float amount = total > 0.0f ? std::max(0.0f, values_[index]) / total : 0.0f;
+                for (int index = 0; index < static_cast<int>(displayValues.size()); ++index) {
+                    const float amount = total > 0.0f ? std::max(0.0f, displayValues[index]) / total : 0.0f;
                     const float sweep = amount * 6.28318530718f;
                     const float endAngle = startAngle + sweep;
                     const core::Color color = sliceColor(index);
@@ -129,14 +132,74 @@ public:
                 for (const TooltipItem& item : tooltips) {
                     tooltip(item.sourceId, item.text, item.x, item.y);
                 }
+
+                if (anim.animating) {
+                    ui_.stack(id_ + ".animator")
+                        .size(0.0f, 0.0f)
+                        .onTimer(0.016f, [] {})
+                        .build();
+                }
             })
             .build();
     }
 
 private:
-    float valueTotal() const {
+    struct AnimState {
+        std::vector<float> display;
+        std::vector<float> target;
+        bool animating = false;
+    };
+
+    static AnimState& animStateFor(const std::string& id) {
+        static std::unordered_map<std::string, AnimState> states;
+        return states[id];
+    }
+
+    static bool closeValues(const std::vector<float>& left, const std::vector<float>& right) {
+        if (left.size() != right.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < left.size(); ++i) {
+            if (std::fabs(left[i] - right[i]) > 0.001f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void syncAnimation(AnimState& anim) const {
+        if (anim.display.size() != values_.size()) {
+            anim.display = values_;
+            anim.target = values_;
+            anim.animating = false;
+            return;
+        }
+
+        if (!closeValues(anim.target, values_)) {
+            anim.target = values_;
+            anim.animating = true;
+        }
+
+        if (!anim.animating) {
+            return;
+        }
+
+        bool moving = false;
+        for (std::size_t i = 0; i < anim.display.size(); ++i) {
+            const float next = anim.display[i] + (anim.target[i] - anim.display[i]) * 0.20f;
+            if (std::fabs(next - anim.target[i]) > 0.002f) {
+                anim.display[i] = next;
+                moving = true;
+            } else {
+                anim.display[i] = anim.target[i];
+            }
+        }
+        anim.animating = moving;
+    }
+
+    static float valueTotal(const std::vector<float>& values) {
         float total = 0.0f;
-        for (float value : values_) {
+        for (float value : values) {
             total += std::max(0.0f, value);
         }
         return total;

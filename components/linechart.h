@@ -99,7 +99,6 @@ public:
                     .y(titleY)
                     .size(std::max(0.0f, width_ - titleX * 2.0f), 28.0f)
                     .text(title_)
-                    .customFont("YouSheBiaoTiHei")
                     .fontSize(22.0f)
                     .lineHeight(26.0f)
                     .color(style_.title)
@@ -134,6 +133,7 @@ public:
                         .rotate(angle)
                         .transformOrigin(0.5f, 0.5f)
                         .transition(transition_)
+                        .animate(core::AnimProperty::Frame | core::AnimProperty::Transform)
                         .build();
                 }
 
@@ -150,6 +150,7 @@ public:
                         .radius(pointSize * 0.5f)
                         .instantStates()
                         .transition(transition_)
+                        .animate(core::AnimProperty::Frame | core::AnimProperty::Color)
                         .onClick([] {})
                         .build();
 
@@ -185,7 +186,6 @@ private:
             .y(y)
             .size(width, 22.0f)
             .text(value)
-            .customFont("YouSheBiaoTiHei")
             .fontSize(14.0f)
             .lineHeight(18.0f)
             .color(style_.label)

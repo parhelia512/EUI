@@ -99,7 +99,6 @@ public:
                     .y(18.0f)
                     .size(std::max(0.0f, width_ - titleX * 2.0f), 28.0f)
                     .text(title_)
-                    .customFont("YouSheBiaoTiHei")
                     .fontSize(22.0f)
                     .lineHeight(26.0f)
                     .color(style_.title)
@@ -137,6 +136,7 @@ public:
                         .radius(std::min(10.0f, barWidth * 0.34f))
                         .instantStates()
                         .transition(transition_)
+                        .animate(core::AnimProperty::Frame | core::AnimProperty::Color)
                         .onClick([] {})
                         .build();
 
@@ -147,7 +147,6 @@ public:
                         .y(height_ - 34.0f)
                         .size(barWidth + 16.0f, 22.0f)
                         .text(index < static_cast<int>(labels_.size()) ? labels_[index] : "")
-                        .customFont("YouSheBiaoTiHei")
                         .fontSize(14.0f)
                         .lineHeight(18.0f)
                         .color(style_.label)
