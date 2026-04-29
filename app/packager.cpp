@@ -348,6 +348,7 @@ constexpr std::uint32_t kPackageVersion = 1;
 constexpr std::uint32_t kFlagDeleteAfterExit = 1u << 0;
 constexpr std::uint64_t kFooterSize = 8 + 8 + kFooterMagic.size();
 constexpr std::uint64_t kCopyBufferSize = 1024 * 1024;
+constexpr const char* kLauncherPathEnv = "EUI_BOX_LAUNCHER_PATH";
 
 struct PackageFooter {
     bool found = false;
@@ -453,6 +454,25 @@ std::string currentExecutablePath() {
 #else
     std::error_code error;
     return fs::absolute(fs::current_path(error), error).string();
+#endif
+}
+
+std::string launcherExecutablePath() {
+#if defined(_WIN32)
+    DWORD length = GetEnvironmentVariableA(kLauncherPathEnv, nullptr, 0);
+    if (length == 0) {
+        return {};
+    }
+    std::string value(length, '\0');
+    const DWORD copied = GetEnvironmentVariableA(kLauncherPathEnv, value.data(), length);
+    if (copied == 0 || copied >= length) {
+        return {};
+    }
+    value.resize(copied);
+    return value;
+#else
+    const char* value = std::getenv(kLauncherPathEnv);
+    return value == nullptr ? std::string{} : std::string(value);
 #endif
 }
 
@@ -693,10 +713,20 @@ std::string defaultOutputPath(const std::string& entryPath) {
         return {};
     }
     const fs::path entry(entryPath);
-    std::error_code error;
-    fs::path dir = fs::current_path(error) / "dist";
-    if (error) {
-        dir = entry.parent_path();
+    fs::path dir;
+    const std::string launcherPath = launcherExecutablePath();
+    if (!launcherPath.empty()) {
+        dir = fs::path(launcherPath).parent_path();
+    }
+    if (dir.empty()) {
+        dir = entry.parent_path() / "dist";
+    }
+    if (dir.empty()) {
+        std::error_code error;
+        dir = fs::current_path(error) / "dist";
+        if (error) {
+            dir = entry.parent_path();
+        }
     }
     std::string extension = entry.extension().string();
 #if defined(_WIN32)
@@ -866,20 +896,42 @@ int launchEntry(const fs::path& entryPath, const fs::path& workDir) {
     std::vector<char> commandLine(command.begin(), command.end());
     commandLine.push_back('\0');
     std::string cwd = workDir.string();
+    const std::string launcherPath = currentExecutablePath();
+
+    std::string previousLauncherPath;
+    bool hadPreviousLauncherPath = false;
+    const DWORD previousLength = GetEnvironmentVariableA(kLauncherPathEnv, nullptr, 0);
+    if (previousLength > 0) {
+        previousLauncherPath.resize(previousLength, '\0');
+        const DWORD copied = GetEnvironmentVariableA(kLauncherPathEnv, previousLauncherPath.data(), previousLength);
+        if (copied > 0 && copied < previousLength) {
+            previousLauncherPath.resize(copied);
+            hadPreviousLauncherPath = true;
+        }
+    }
+    if (!launcherPath.empty()) {
+        SetEnvironmentVariableA(kLauncherPathEnv, launcherPath.c_str());
+    }
 
     STARTUPINFOA startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
-    if (!CreateProcessA(nullptr,
-                        commandLine.data(),
-                        nullptr,
-                        nullptr,
-                        FALSE,
-                        0,
-                        nullptr,
-                        cwd.c_str(),
-                        &startup,
-                        &process)) {
+    const BOOL launched = CreateProcessA(nullptr,
+                                         commandLine.data(),
+                                         nullptr,
+                                         nullptr,
+                                         FALSE,
+                                         0,
+                                         nullptr,
+                                         cwd.c_str(),
+                                         &startup,
+                                         &process);
+    if (hadPreviousLauncherPath) {
+        SetEnvironmentVariableA(kLauncherPathEnv, previousLauncherPath.c_str());
+    } else {
+        SetEnvironmentVariableA(kLauncherPathEnv, nullptr);
+    }
+    if (!launched) {
         return 1;
     }
     WaitForSingleObject(process.hProcess, INFINITE);
@@ -901,7 +953,9 @@ int launchEntry(const fs::path& entryPath, const fs::path& workDir) {
         result += "'";
         return result;
     };
-    const std::string command = "cd " + shellQuote(workDir.string()) + " && " + shellQuote(entryPath.string());
+    const std::string launcherPath = currentExecutablePath();
+    const std::string env = launcherPath.empty() ? "" : (std::string(kLauncherPathEnv) + "=" + shellQuote(launcherPath) + " ");
+    const std::string command = "cd " + shellQuote(workDir.string()) + " && " + env + shellQuote(entryPath.string());
     return std::system(command.c_str()) == 0 ? 0 : 1;
 #endif
 }
