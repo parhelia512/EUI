@@ -29,7 +29,10 @@ namespace core {
 
 namespace {
 
-constexpr int SdfPadding = 8;
+constexpr int SdfPadding = 12;
+constexpr float SdfOversample = 2.0f;
+constexpr int SdfOnEdgeValue = 128;
+constexpr float SdfPixelDistanceScale = 48.0f;
 constexpr const char* kDefaultUiFontFile = "JingNanJunJunTi-JinNanJunJunTi-Bold-2.ttf";
 constexpr const char* kDefaultIconFontFile = "Font Awesome 7 Free-Solid-900.otf";
 
@@ -51,8 +54,8 @@ struct FontInfoHolder {
 
 struct SharedTextAtlas {
     GLuint texture = 0;
-    int width = 1024;
-    int height = 1024;
+    int width = 2048;
+    int height = 2048;
     int x = 1;
     int y = 1;
     int rowHeight = 0;
@@ -121,7 +124,7 @@ bool createSharedTextRenderResources(SharedTextRenderResources& resources) {
         "uniform vec4 uColor;\n"
         "void main() {\n"
         "    float sdf = texture(uAtlas, vUv).r;\n"
-        "    float width = fwidth(sdf);\n"
+        "    float width = max(fwidth(sdf) * 0.7, 0.001);\n"
         "    float alpha = vUseSdf > 0.5 ? smoothstep(0.5 - width, 0.5 + width, sdf) : sdf;\n"
         "    if (alpha <= 0.0) discard;\n"
         "    FragColor = vec4(uColor.rgb, uColor.a * alpha);\n"
@@ -249,8 +252,10 @@ void releaseSharedTextAtlas() {
 }
 
 std::string glyphCacheKey(const FontFace& face, float fontSize, unsigned int codepoint) {
+    const int sdfConfig = face.useSdf ? static_cast<int>(std::round(SdfOversample * 100.0f)) : 0;
     return face.path + "#" +
            std::to_string(static_cast<int>(std::round(fontSize * 64.0f))) + "#" +
+           (face.useSdf ? "sdf" : "bitmap") + std::to_string(sdfConfig) + "#" +
            std::to_string(codepoint);
 }
 
@@ -811,10 +816,11 @@ bool TextPrimitive::ensureGlyph(unsigned int codepoint) {
     int height = 0;
     int xoff = 0;
     int yoff = 0;
+    const float bitmapScale = face->useSdf ? face->scale * SdfOversample : face->scale;
     unsigned char* bitmap = face->useSdf
-        ? stbtt_GetCodepointSDF(&face->info, face->scale, static_cast<int>(codepoint),
-                                SdfPadding, 128, 32.0f, &width, &height, &xoff, &yoff)
-        : stbtt_GetCodepointBitmap(&face->info, face->scale, face->scale, static_cast<int>(codepoint),
+        ? stbtt_GetCodepointSDF(&face->info, bitmapScale, static_cast<int>(codepoint),
+                                SdfPadding, SdfOnEdgeValue, SdfPixelDistanceScale, &width, &height, &xoff, &yoff)
+        : stbtt_GetCodepointBitmap(&face->info, bitmapScale, bitmapScale, static_cast<int>(codepoint),
                                    &width, &height, &xoff, &yoff);
     if (!bitmap || width <= 0 || height <= 0) {
         if (bitmap && face->useSdf) {
@@ -845,10 +851,11 @@ bool TextPrimitive::ensureGlyph(unsigned int codepoint) {
     glTexSubImage2D(GL_TEXTURE_2D, 0, atlas.x, atlas.y, width, height, GL_RED, GL_UNSIGNED_BYTE, bitmap);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    glyph.xOffset = static_cast<float>(xoff);
-    glyph.yOffset = static_cast<float>(yoff) + face->ascent;
-    glyph.width = static_cast<float>(width);
-    glyph.height = static_cast<float>(height);
+    const float layoutScale = face->useSdf ? 1.0f / SdfOversample : 1.0f;
+    glyph.xOffset = static_cast<float>(xoff) * layoutScale;
+    glyph.yOffset = static_cast<float>(yoff) * layoutScale + face->ascent;
+    glyph.width = static_cast<float>(width) * layoutScale;
+    glyph.height = static_cast<float>(height) * layoutScale;
     glyph.u0 = static_cast<float>(atlas.x) / static_cast<float>(atlas.width);
     glyph.v0 = static_cast<float>(atlas.y) / static_cast<float>(atlas.height);
     glyph.u1 = static_cast<float>(atlas.x + width) / static_cast<float>(atlas.width);

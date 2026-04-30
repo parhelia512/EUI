@@ -282,7 +282,6 @@ private:
             .y(18.0f)
             .size(std::max(0.0f, width - 124.0f), 30.0f)
             .text("Date")
-            .customFont("YouSheBiaoTiHei")
             .fontSize(24.0f)
             .lineHeight(29.0f)
             .color(style_.text)
