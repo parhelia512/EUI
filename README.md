@@ -38,7 +38,8 @@ Requirements:
 - CMake 3.14+
 - A C++17 compiler
 - OpenGL
-- Network access for CMake to fetch GLFW and glad
+
+Build-time third-party sources are vendored under `3rd/`, so the default configure/build path is offline. To force an online dependency fetch, configure with `-DEUI_DEPS_MODE=fetch`; to use local sources and only fetch missing dependencies, use `-DEUI_DEPS_MODE=auto`.
 
 Windows / PowerShell example:
 
@@ -58,7 +59,7 @@ assets/       Runtime assets: fonts, PNG, SVG, and icons
 components/   Reusable UI components built on top of the DSL
 core/         DSL, Runtime, primitives, text, image, network, and platform code
 docs/         Implementation notes and API documentation
-3rd/          Third-party single-file dependencies
+3rd/          Vendored third-party build sources and single-file dependencies
 ```
 
 ## Docs
@@ -89,7 +90,7 @@ Components only compose DSL trees. They do not own OpenGL primitives directly. B
 
 ## License
 
-EUI-NEO's original source code is licensed under the Apache License 2.0. Third-party code under `3rd/`, build-time dependencies fetched by CMake, and bundled fonts or icon fonts under `assets/` follow their respective upstream licenses and copyright notices.
+EUI-NEO's original source code is licensed under the Apache License 2.0. Third-party code under `3rd/`, optional build-time dependencies fetched by CMake, and bundled fonts or icon fonts under `assets/` follow their respective upstream licenses and copyright notices.
 
 ## Star History
 

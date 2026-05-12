@@ -38,7 +38,8 @@ EUI-NEO 是一个基于 C++17、OpenGL 和 GLFW 的跨平台高性能轻量级 U
 - CMake 3.14+
 - 支持 C++17 的编译器
 - OpenGL
-- 可访问网络时，CMake 会拉取 GLFW 和 glad
+
+构建期第三方源码已内置在 `3rd/` 下，默认配置和构建不需要联网。需要强制联网拉取依赖时，可配置 `-DEUI_DEPS_MODE=fetch`；希望优先用本地源码、缺失时才拉取，可使用 `-DEUI_DEPS_MODE=auto`。
 
 Windows / PowerShell 示例：
 
@@ -58,7 +59,7 @@ assets/       字体、PNG、SVG 和图标等运行资源
 components/   基于 DSL 封装的通用组件
 core/         DSL、Runtime、图元、文本、图片、网络和平台能力
 docs/         项目实现文档
-3rd/          第三方单文件依赖
+3rd/          内置第三方构建源码和单文件依赖
 ```
 
 ## Docs
@@ -89,7 +90,7 @@ docs/         项目实现文档
 
 ## 许可
 
-EUI-NEO 的原创源码采用 Apache License 2.0。`3rd/` 下的第三方代码、CMake 构建时拉取的第三方依赖，以及 `assets/` 下随项目分发的字体和图标字体，遵循各自上游许可证和版权声明。
+EUI-NEO 的原创源码采用 Apache License 2.0。`3rd/` 下的第三方代码、CMake 可选联网拉取的构建期依赖，以及 `assets/` 下随项目分发的字体和图标字体，遵循各自上游许可证和版权声明。
 
 ## Star History
 

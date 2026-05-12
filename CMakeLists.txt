@@ -12,6 +12,36 @@ set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED TRUE)
 
+set(EUI_DEPS_MODE "bundled" CACHE STRING "Third-party dependency mode: bundled, auto, or fetch")
+set_property(CACHE EUI_DEPS_MODE PROPERTY STRINGS bundled auto fetch)
+if(NOT EUI_DEPS_MODE MATCHES "^(bundled|auto|fetch)$")
+    message(FATAL_ERROR "EUI_DEPS_MODE must be one of: bundled, auto, fetch")
+endif()
+
+set(EUI_THIRD_PARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rd")
+
+function(eui_use_bundled_dependency out_var dep_name source_dir marker_file)
+    if(EUI_DEPS_MODE STREQUAL "fetch")
+        set(${out_var} FALSE PARENT_SCOPE)
+        return()
+    endif()
+
+    if(EXISTS "${source_dir}/${marker_file}")
+        set(${out_var} TRUE PARENT_SCOPE)
+        return()
+    endif()
+
+    if(EUI_DEPS_MODE STREQUAL "auto")
+        set(${out_var} FALSE PARENT_SCOPE)
+        return()
+    endif()
+
+    message(FATAL_ERROR
+        "Bundled dependency '${dep_name}' is missing at ${source_dir}. "
+        "Restore the vendored source, or configure with -DEUI_DEPS_MODE=auto/fetch to allow network fetches."
+    )
+endfunction()
+
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "Build the GLFW example programs" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "Build the GLFW test programs" FORCE)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "Build the GLFW documentation" FORCE)
@@ -19,48 +49,82 @@ set(GLFW_INSTALL OFF CACHE BOOL "Generate installation target" FORCE)
 
 include(FetchContent)
 
-set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
-FetchContent_Declare(
-    glfw
-    URL https://github.com/glfw/glfw/archive/refs/tags/3.4.zip
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    TIMEOUT 30
+eui_use_bundled_dependency(
+    EUI_USE_BUNDLED_GLFW
+    "GLFW"
+    "${EUI_THIRD_PARTY_DIR}/glfw"
+    "CMakeLists.txt"
 )
-FetchContent_MakeAvailable(glfw)
 
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
-FetchContent_Declare(
-    glad
-    URL https://github.com/libigl/libigl-glad/archive/refs/heads/master.zip
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    TIMEOUT 30
-)
-FetchContent_GetProperties(glad)
-if(NOT glad_POPULATED)
-    if(POLICY CMP0169)
-        cmake_policy(PUSH)
-        cmake_policy(SET CMP0169 OLD)
-    endif()
-    FetchContent_Populate(glad)
-    if(POLICY CMP0169)
-        cmake_policy(POP)
-    endif()
-    add_library(glad "${glad_SOURCE_DIR}/src/glad.c")
-    target_include_directories(glad PUBLIC "${glad_SOURCE_DIR}/include")
-    if(NOT WIN32)
-        target_link_libraries(glad PUBLIC ${CMAKE_DL_LIBS})
-    endif()
-    set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
+if(EUI_USE_BUNDLED_GLFW)
+    add_subdirectory("${EUI_THIRD_PARTY_DIR}/glfw" "${CMAKE_CURRENT_BINARY_DIR}/_deps/glfw-bundled-build" EXCLUDE_FROM_ALL)
+else()
+    FetchContent_Declare(
+        glfw
+        URL https://github.com/glfw/glfw/archive/refs/tags/3.4.zip
+        URL_HASH SHA256=a133ddc3d3c66143eba9035621db8e0bcf34dba1ee9514a9e23e96afd39fd57a
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        TIMEOUT 30
+    )
+    FetchContent_MakeAvailable(glfw)
 endif()
 
-FetchContent_Declare(
-    tray
-    URL https://github.com/zserge/tray/archive/refs/heads/master.zip
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    TIMEOUT 30
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+eui_use_bundled_dependency(
+    EUI_USE_BUNDLED_GLAD
+    "glad"
+    "${EUI_THIRD_PARTY_DIR}/glad"
+    "src/glad.c"
 )
-FetchContent_MakeAvailable(tray)
-set(TRAY_INCLUDE_DIR "${tray_SOURCE_DIR}")
+
+if(EUI_USE_BUNDLED_GLAD)
+    set(glad_SOURCE_DIR "${EUI_THIRD_PARTY_DIR}/glad")
+else()
+    FetchContent_Declare(
+        glad
+        URL https://github.com/libigl/libigl-glad/archive/651a425101365aa6e8504988ef9bb363d066c5ee.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        TIMEOUT 30
+    )
+    FetchContent_GetProperties(glad)
+    if(NOT glad_POPULATED)
+        if(POLICY CMP0169)
+            cmake_policy(PUSH)
+            cmake_policy(SET CMP0169 OLD)
+        endif()
+        FetchContent_Populate(glad)
+        if(POLICY CMP0169)
+            cmake_policy(POP)
+        endif()
+    endif()
+endif()
+add_library(glad "${glad_SOURCE_DIR}/src/glad.c")
+target_include_directories(glad PUBLIC "${glad_SOURCE_DIR}/include")
+if(NOT WIN32)
+    target_link_libraries(glad PUBLIC ${CMAKE_DL_LIBS})
+endif()
+set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+eui_use_bundled_dependency(
+    EUI_USE_BUNDLED_TRAY
+    "tray"
+    "${EUI_THIRD_PARTY_DIR}/tray"
+    "tray.h"
+)
+
+if(EUI_USE_BUNDLED_TRAY)
+    set(TRAY_INCLUDE_DIR "${EUI_THIRD_PARTY_DIR}/tray")
+else()
+    FetchContent_Declare(
+        tray
+        URL https://github.com/zserge/tray/archive/8dd1358b92562faf7c032cf5362fa97cbc7e13e9.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        TIMEOUT 30
+    )
+    FetchContent_MakeAvailable(tray)
+    set(TRAY_INCLUDE_DIR "${tray_SOURCE_DIR}")
+endif()
 
 find_package(OpenGL REQUIRED)
 if(NOT WIN32)

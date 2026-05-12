@@ -86,7 +86,7 @@ jobs:
             echo "No executable outputs found in build." >&2
             exit 1
           fi
-          mapfile -t glfw_libs < <(find build/_deps/glfw-build/src -maxdepth 1 -type f -name 'libglfw.so*' 2>/dev/null || true)
+          mapfile -t glfw_libs < <(find build/_deps -path '*/src/libglfw.so*' 2>/dev/null || true)
           files+=("${glfw_libs[@]}")
           if [ -d build/assets ]; then
             files+=("build/assets")
