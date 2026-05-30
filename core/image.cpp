@@ -41,6 +41,7 @@ struct TextureRecord {
     GLuint texture = 0;
     int width = 0;
     int height = 0;
+    int references = 0;
 };
 
 std::unordered_map<std::string, TextureRecord> gTextureCache;
@@ -509,6 +510,14 @@ struct ImagePrimitive::SharedResources {
     int references = 0;
 };
 
+struct ImagePrimitive::GifFrameData {
+    std::vector<unsigned char> pixels;
+    std::vector<int> delays;
+    int width = 0;
+    int height = 0;
+    int frameCount = 0;
+};
+
 bool ImagePrimitive::initialize() {
     if (!retainSharedResources()) {
         return false;
@@ -586,6 +595,14 @@ void ImagePrimitive::setCoverViewport(bool enabled, const Vec2& canvasSize, cons
 }
 
 bool ImagePrimitive::updateTexture() {
+    if (texture_ != 0 &&
+        loadedGifPath_.empty() &&
+        loadedSource_ == source_ &&
+        loadedFlipVertically_ == flipVertically_) {
+        pendingLoad_ = false;
+        return false;
+    }
+
     bool pending = false;
     const std::string resolvedPath = resolveImagePath(source_, &pending);
     pendingLoad_ = pending;
@@ -596,7 +613,7 @@ bool ImagePrimitive::updateTexture() {
     if (!loadedGifPath_.empty()) {
         releaseOwnedTexture();
         loadedGifPath_.clear();
-        gifPixels_.clear();
+        gifFrames_.reset();
         gifDelays_.clear();
         gifFrameCount_ = 0;
         gifFrameIndex_ = 0;
@@ -605,7 +622,8 @@ bool ImagePrimitive::updateTexture() {
 
     int nextWidth = 0;
     int nextHeight = 0;
-    const GLuint nextTexture = loadTexture(source_, flipVertically_, &pending, &nextWidth, &nextHeight);
+    std::string nextCacheKey;
+    const GLuint nextTexture = acquireTexture(source_, flipVertically_, &pending, &nextWidth, &nextHeight, &nextCacheKey);
     pendingLoad_ = pending;
 
     if (nextTexture == 0) {
@@ -623,6 +641,7 @@ bool ImagePrimitive::updateTexture() {
     releaseOwnedTexture();
     texture_ = nextTexture;
     ownsTexture_ = false;
+    loadedTextureCacheKey_ = std::move(nextCacheKey);
     textureWidth_ = nextWidth;
     textureHeight_ = nextHeight;
     loadedSource_ = source_;
@@ -840,65 +859,80 @@ bool ImagePrimitive::updateGifTexture(const std::string& resolvedPath) {
     }
 
     if (loadedGifPath_ != resolvedPath || loadedGifFlipVertically_ != flipVertically_) {
-        std::vector<unsigned char> bytes;
-        if (!readBinaryFile(resolvedPath, bytes)) {
-            return false;
-        }
-
-        stbi_set_flip_vertically_on_load(flipVertically_ ? 1 : 0);
-        int* delays = nullptr;
-        int width = 0;
-        int height = 0;
-        int frames = 0;
-        int channels = 0;
-        unsigned char* pixels = stbi_load_gif_from_memory(bytes.data(), static_cast<int>(bytes.size()),
-                                                          &delays, &width, &height, &frames, &channels, STBI_rgb_alpha);
-        if (pixels == nullptr || width <= 0 || height <= 0 || frames <= 0) {
-            if (pixels != nullptr) {
-                stbi_image_free(pixels);
+        static std::unordered_map<std::string, std::weak_ptr<const GifFrameData>> gifCache;
+        const std::string cacheKey = resolvedPath + (flipVertically_ ? "#flip" : "#noflip");
+        std::shared_ptr<const GifFrameData> frameData;
+        if (auto cached = gifCache[cacheKey].lock()) {
+            frameData = std::move(cached);
+        } else {
+            std::vector<unsigned char> bytes;
+            if (!readBinaryFile(resolvedPath, bytes)) {
+                return false;
             }
+
+            stbi_set_flip_vertically_on_load(flipVertically_ ? 1 : 0);
+            int* delays = nullptr;
+            int width = 0;
+            int height = 0;
+            int frames = 0;
+            int channels = 0;
+            unsigned char* pixels = stbi_load_gif_from_memory(bytes.data(), static_cast<int>(bytes.size()),
+                                                              &delays, &width, &height, &frames, &channels, STBI_rgb_alpha);
+            if (pixels == nullptr || width <= 0 || height <= 0 || frames <= 0) {
+                if (pixels != nullptr) {
+                    stbi_image_free(pixels);
+                }
+                if (delays != nullptr) {
+                    stbi_image_free(delays);
+                }
+                return false;
+            }
+
+            auto mutableFrames = std::make_shared<GifFrameData>();
+            const size_t frameBytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
+            mutableFrames->pixels.assign(pixels, pixels + frameBytes * static_cast<size_t>(frames));
+            mutableFrames->delays.assign(static_cast<size_t>(frames), 100);
+            for (int i = 0; i < frames; ++i) {
+                const int delay = delays != nullptr ? delays[i] : 100;
+                mutableFrames->delays[static_cast<size_t>(i)] = std::max(10, delay);
+            }
+            mutableFrames->width = width;
+            mutableFrames->height = height;
+            mutableFrames->frameCount = frames;
+            stbi_image_free(pixels);
             if (delays != nullptr) {
                 stbi_image_free(delays);
             }
-            return false;
-        }
-
-        const size_t frameBytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
-        gifPixels_.assign(pixels, pixels + frameBytes * static_cast<size_t>(frames));
-        gifDelays_.assign(static_cast<size_t>(frames), 100);
-        for (int i = 0; i < frames; ++i) {
-            const int delay = delays != nullptr ? delays[i] : 100;
-            gifDelays_[static_cast<size_t>(i)] = std::max(10, delay);
-        }
-        stbi_image_free(pixels);
-        if (delays != nullptr) {
-            stbi_image_free(delays);
+            frameData = mutableFrames;
+            gifCache[cacheKey] = frameData;
         }
 
         releaseOwnedTexture();
-        texture_ = createTexture(gifPixels_.data(), width, height);
+        texture_ = createTexture(frameData->pixels.data(), frameData->width, frameData->height);
         if (texture_ == 0) {
-            gifPixels_.clear();
+            gifFrames_.reset();
             gifDelays_.clear();
             gifFrameCount_ = 0;
             return false;
         }
 
         ownsTexture_ = true;
-        textureWidth_ = width;
-        textureHeight_ = height;
+        textureWidth_ = frameData->width;
+        textureHeight_ = frameData->height;
         loadedSource_ = source_;
         loadedFlipVertically_ = flipVertically_;
         loadedGifPath_ = resolvedPath;
         loadedGifFlipVertically_ = flipVertically_;
-        gifFrameCount_ = frames;
+        gifFrames_ = std::move(frameData);
+        gifDelays_ = gifFrames_->delays;
+        gifFrameCount_ = gifFrames_->frameCount;
         gifFrameIndex_ = 0;
         gifNextFrameTime_ = glfwGetTime() + static_cast<double>(gifDelays_.front()) / 1000.0;
         pendingLoad_ = false;
         return true;
     }
 
-    if (gifFrameCount_ <= 1 || texture_ == 0 || gifPixels_.empty()) {
+    if (gifFrameCount_ <= 1 || texture_ == 0 || !gifFrames_ || gifFrames_->pixels.empty()) {
         return false;
     }
 
@@ -916,12 +950,13 @@ bool ImagePrimitive::updateGifTexture(const std::string& resolvedPath) {
     } while (now >= gifNextFrameTime_ && guard < gifFrameCount_);
 
     const size_t frameBytes = static_cast<size_t>(textureWidth_) * static_cast<size_t>(textureHeight_) * 4u;
-    const unsigned char* frame = gifPixels_.data() + frameBytes * static_cast<size_t>(gifFrameIndex_);
+    const unsigned char* frame = gifFrames_->pixels.data() + frameBytes * static_cast<size_t>(gifFrameIndex_);
     updateTexturePixels(texture_, frame, textureWidth_, textureHeight_);
     return true;
 }
 
 void ImagePrimitive::releaseOwnedTexture() {
+    releaseCachedTextureReference();
     if (ownsTexture_ && texture_ != 0) {
         glDeleteTextures(1, &texture_);
         texture_ = 0;
@@ -929,7 +964,23 @@ void ImagePrimitive::releaseOwnedTexture() {
     ownsTexture_ = false;
 }
 
-GLuint ImagePrimitive::loadTexture(const std::string& source, bool flipVertically, bool* pending, int* outWidth, int* outHeight) {
+void ImagePrimitive::releaseCachedTextureReference() {
+    if (loadedTextureCacheKey_.empty()) {
+        return;
+    }
+    releaseCachedTexture(loadedTextureCacheKey_);
+    loadedTextureCacheKey_.clear();
+    if (!ownsTexture_) {
+        texture_ = 0;
+    }
+}
+
+GLuint ImagePrimitive::acquireTexture(const std::string& source,
+                                      bool flipVertically,
+                                      bool* pending,
+                                      int* outWidth,
+                                      int* outHeight,
+                                      std::string* outCacheKey) {
     const std::string resolvedPath = resolveImagePath(source, pending);
     if (resolvedPath.empty()) {
         return 0;
@@ -938,11 +989,15 @@ GLuint ImagePrimitive::loadTexture(const std::string& source, bool flipVerticall
     const std::string cacheKey = resolvedPath + (flipVertically ? "#flip" : "#noflip");
     const auto cached = gTextureCache.find(cacheKey);
     if (cached != gTextureCache.end()) {
+        ++cached->second.references;
         if (outWidth != nullptr) {
             *outWidth = cached->second.width;
         }
         if (outHeight != nullptr) {
             *outHeight = cached->second.height;
+        }
+        if (outCacheKey != nullptr) {
+            *outCacheKey = cacheKey;
         }
         return cached->second.texture;
     }
@@ -976,15 +1031,35 @@ GLuint ImagePrimitive::loadTexture(const std::string& source, bool flipVerticall
     }
 
     if (texture != 0) {
-        gTextureCache[cacheKey] = {texture, width, height};
+        gTextureCache[cacheKey] = {texture, width, height, 1};
         if (outWidth != nullptr) {
             *outWidth = width;
         }
         if (outHeight != nullptr) {
             *outHeight = height;
         }
+        if (outCacheKey != nullptr) {
+            *outCacheKey = cacheKey;
+        }
     }
     return texture;
+}
+
+void ImagePrimitive::releaseCachedTexture(const std::string& cacheKey) {
+    const auto cached = gTextureCache.find(cacheKey);
+    if (cached == gTextureCache.end()) {
+        return;
+    }
+
+    cached->second.references = std::max(0, cached->second.references - 1);
+    if (cached->second.references > 0) {
+        return;
+    }
+
+    if (cached->second.texture != 0) {
+        glDeleteTextures(1, &cached->second.texture);
+    }
+    gTextureCache.erase(cached);
 }
 
 Vec3 ImagePrimitive::transformPoint(float x, float y) const {

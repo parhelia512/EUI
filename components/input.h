@@ -109,6 +109,7 @@ public:
         const bool empty = state.text.empty();
         const bool hasSelection = !layout.selectionRects.empty();
         const std::string textDirtyKey = id_ + ".text|" + std::to_string(state.textRevision) + (empty ? "|p" : "|v");
+        const float renderedTextHeight = multiline_ ? layout.contentHeight : textHeight;
 
         ui_.stack(id_)
             .size(width_, height_)
@@ -299,7 +300,7 @@ public:
 
                 ui_.text(id_ + ".text")
                     .position(inset_ - state.horizontalScroll, textY - state.verticalScroll)
-                    .size(layout.visibleTextWidth, textHeight)
+                    .size(layout.visibleTextWidth, renderedTextHeight)
                     .dirtyKey(textDirtyKey)
                     .text(empty ? placeholder_ : state.text)
                     .fontSize(fontSize_)
@@ -385,6 +386,7 @@ private:
         float lineHeight = 0.0f;
         float scroll = 0.0f;
         float textWidth = 0.0f;
+        float contentHeight = 0.0f;
         float cursorPixel = 0.0f;
         float cursorX = 0.0f;
         float cursorY = 0.0f;
@@ -425,9 +427,10 @@ private:
                 state.horizontalScroll = 0.0f;
                 layout.scroll = 0.0f;
                 layout.textWidth = state.cachedTextWidth;
+                layout.contentHeight = static_cast<float>(layout.lineList().size()) * lineHeight;
                 layout.cursorPixel = caretX(cursorLine.metrics, state.cursor - cursorLine.start);
                 layout.cursorX = inset + layout.cursorPixel;
-                layout.maxVerticalScroll = std::max(0.0f, static_cast<float>(layout.lineList().size()) * lineHeight - viewportHeight);
+                layout.maxVerticalScroll = std::max(0.0f, layout.contentHeight - viewportHeight);
                 state.verticalScroll = std::clamp(state.verticalScroll, 0.0f, layout.maxVerticalScroll);
                 syncVerticalScroll(state, layout.cursorLine, lineHeight, viewportHeight);
                 state.verticalScroll = std::clamp(state.verticalScroll, 0.0f, layout.maxVerticalScroll);
@@ -441,6 +444,7 @@ private:
                 layout.cursorLine = 0;
                 layout.scroll = state.horizontalScroll;
                 layout.textWidth = layout.metrics.width;
+                layout.contentHeight = lineHeight;
                 layout.cursorPixel = caretX(layout.metrics, state.cursor);
                 layout.cursorX = inset + layout.cursorPixel - layout.scroll;
                 layout.cursorY = textTop;

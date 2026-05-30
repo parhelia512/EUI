@@ -567,35 +567,31 @@ std::shared_ptr<FontInfoHolder> loadSharedFontStack(const std::string& fontPath,
     }
     holder->faces.push_back(std::move(primary));
 
-    const std::string assetFallbackPaths[] = {
-        resolveDefaultIconFontPath(),
-        resolveDefaultUiFontPath()
+    auto addLazyFallback = [&](const std::string& fallbackPath) {
+        if (fallbackPath.empty() || fallbackPath == fontPath) {
+            return;
+        }
+        if (std::find(holder->lazyFallbackPaths.begin(), holder->lazyFallbackPaths.end(), fallbackPath) == holder->lazyFallbackPaths.end()) {
+            holder->lazyFallbackPaths.push_back(fallbackPath);
+        }
     };
 
-    for (const std::string& fallbackPath : assetFallbackPaths) {
-        if (fallbackPath.empty() || fallbackPath == fontPath) {
-            continue;
-        }
-
-        FontFace fallback;
-        if (loadFontFace(fallbackPath, fontSize, fallback)) {
-            holder->faces.push_back(std::move(fallback));
-        }
-    }
+    addLazyFallback(resolveDefaultUiFontPath());
+    addLazyFallback(resolveDefaultIconFontPath());
 
 #ifdef _WIN32
-    holder->lazyFallbackPaths.push_back("C:/Windows/Fonts/seguiemj.ttf");
-    holder->lazyFallbackPaths.push_back("C:/Windows/Fonts/seguisym.ttf");
-    holder->lazyFallbackPaths.push_back("C:/Windows/Fonts/msyh.ttc");
-    holder->lazyFallbackPaths.push_back("C:/Windows/Fonts/simhei.ttf");
+    addLazyFallback("C:/Windows/Fonts/seguiemj.ttf");
+    addLazyFallback("C:/Windows/Fonts/seguisym.ttf");
+    addLazyFallback("C:/Windows/Fonts/msyh.ttc");
+    addLazyFallback("C:/Windows/Fonts/simhei.ttf");
 #elif defined(__APPLE__)
-    holder->lazyFallbackPaths.push_back("/System/Library/Fonts/Apple Color Emoji.ttc");
-    holder->lazyFallbackPaths.push_back("/System/Library/Fonts/Supplemental/Arial Unicode.ttf");
-    holder->lazyFallbackPaths.push_back("/System/Library/Fonts/Supplemental/Arial.ttf");
+    addLazyFallback("/System/Library/Fonts/Apple Color Emoji.ttc");
+    addLazyFallback("/System/Library/Fonts/Supplemental/Arial Unicode.ttf");
+    addLazyFallback("/System/Library/Fonts/Supplemental/Arial.ttf");
 #else
-    holder->lazyFallbackPaths.push_back("/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf");
-    holder->lazyFallbackPaths.push_back("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc");
-    holder->lazyFallbackPaths.push_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+    addLazyFallback("/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf");
+    addLazyFallback("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc");
+    addLazyFallback("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
 #endif
 
     cache[cacheKey] = holder;

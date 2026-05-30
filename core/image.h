@@ -2,6 +2,7 @@
 
 #include "core/primitive.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -42,15 +43,18 @@ public:
 
 private:
     struct SharedResources;
+    struct GifFrameData;
 
     static SharedResources& sharedResources();
     static bool retainSharedResources();
     static void releaseSharedResources();
     static GLuint compileShader(GLenum type, const char* source);
-    static GLuint loadTexture(const std::string& source, bool flipVertically, bool* pending, int* width, int* height);
+    static GLuint acquireTexture(const std::string& source, bool flipVertically, bool* pending, int* width, int* height, std::string* cacheKey);
+    static void releaseCachedTexture(const std::string& cacheKey);
 
     bool updateGifTexture(const std::string& resolvedPath);
     void releaseOwnedTexture();
+    void releaseCachedTextureReference();
     Vec3 transformPoint(float x, float y) const;
     void rebuildVertices(float* vertices) const;
 
@@ -72,12 +76,13 @@ private:
     Vec2 coverViewportOffset_;
     GLuint texture_ = 0;
     bool ownsTexture_ = false;
+    std::string loadedTextureCacheKey_;
     int textureWidth_ = 0;
     int textureHeight_ = 0;
 
     std::string loadedGifPath_;
     bool loadedGifFlipVertically_ = false;
-    std::vector<unsigned char> gifPixels_;
+    std::shared_ptr<const GifFrameData> gifFrames_;
     std::vector<int> gifDelays_;
     int gifFrameCount_ = 0;
     int gifFrameIndex_ = 0;
