@@ -33,6 +33,7 @@ bool sampleChecked = true;
 bool sampleSwitch = true;
 bool sampleRadioA = true;
 std::string sampleInput = "Hello EUI-NEO 😉";
+std::string sampleEditor = "Hello EUI-NEO 😉\nType multiple lines here.";
 float sampleSlider = 0.44f;
 int sampleSegment = 1;
 int sampleTab = 0;
@@ -574,6 +575,17 @@ void composeControlsPage(core::dsl::Ui& ui, float width, float height) {
         .placeholder("Type here")
         .onChange([](const std::string& value) {
             sampleInput = value;
+        })
+        .build();
+
+    components::input(ui, "control.editor")
+        .theme(themeColors())
+        .size(fieldWidth, 120.0f)
+        .value(sampleEditor)
+        .placeholder("Write notes...")
+        .multiline(true)
+        .onChange([](const std::string& value) {
+            sampleEditor = value;
         })
         .build();
 

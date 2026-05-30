@@ -297,6 +297,8 @@ private:
         HorizontalAlign horizontalAlign = HorizontalAlign::Left;
         VerticalAlign verticalAlign = VerticalAlign::Top;
         float lineHeight = 0.0f;
+        std::string contentDirtyKey;
+        bool primitiveStyleDirty = true;
     };
 
     struct ImageInstance {
@@ -1291,8 +1293,12 @@ private:
                                               instance.frame.value(),
                                               instance.transform.value());
 
+        const bool keyedContent = !element.dirtyKey.empty();
+        const bool textChanged = keyedContent
+            ? instance.contentDirtyKey != element.dirtyKey
+            : instance.text != element.text;
         const bool contentChanged =
-            instance.text != element.text ||
+            textChanged ||
             instance.fontFamily != element.fontFamily ||
             instance.fontSize != element.fontSize ||
             instance.fontWeight != element.fontWeight ||
@@ -1303,6 +1309,7 @@ private:
             instance.lineHeight != element.lineHeight;
         if (contentChanged) {
             instance.text = element.text;
+            instance.contentDirtyKey = element.dirtyKey;
             instance.fontFamily = element.fontFamily;
             instance.fontSize = element.fontSize;
             instance.fontWeight = element.fontWeight;
@@ -1311,6 +1318,7 @@ private:
             instance.horizontalAlign = element.horizontalAlign;
             instance.verticalAlign = element.verticalAlign;
             instance.lineHeight = element.lineHeight;
+            instance.primitiveStyleDirty = true;
         }
 
         bool changed = false;
@@ -1868,16 +1876,19 @@ private:
                                            renderTransform.origin.y + renderTransform.translate.y,
                                            visualScale);
         instance.primitive->setTransform(transform, transformFrame);
-        instance.primitive->setText(element.text);
-        instance.primitive->setFontFamily(element.fontFamily);
-        instance.primitive->setFontSize(toPixels(element.fontSize, dpiScale));
-        instance.primitive->setFontWeight(element.fontWeight);
         instance.primitive->setColor(textColor);
-        instance.primitive->setMaxWidth(maxWidth);
-        instance.primitive->setWrap(element.wrap);
-        instance.primitive->setHorizontalAlign(element.horizontalAlign);
-        instance.primitive->setVerticalAlign(element.verticalAlign);
-        instance.primitive->setLineHeight(lineHeight);
+        if (instance.primitiveStyleDirty) {
+            instance.primitive->setText(instance.text);
+            instance.primitive->setFontFamily(instance.fontFamily);
+            instance.primitive->setFontSize(toPixels(instance.fontSize, dpiScale));
+            instance.primitive->setFontWeight(instance.fontWeight);
+            instance.primitive->setMaxWidth(maxWidth);
+            instance.primitive->setWrap(instance.wrap);
+            instance.primitive->setHorizontalAlign(instance.horizontalAlign);
+            instance.primitive->setVerticalAlign(instance.verticalAlign);
+            instance.primitive->setLineHeight(lineHeight);
+            instance.primitiveStyleDirty = false;
+        }
         instance.primitive->render(windowWidth, windowHeight);
     }
 

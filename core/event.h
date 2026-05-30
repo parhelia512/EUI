@@ -40,6 +40,8 @@ struct KeyboardEvent {
     bool enter = false;
     bool left = false;
     bool right = false;
+    bool up = false;
+    bool down = false;
     bool home = false;
     bool end = false;
     bool selectAll = false;
@@ -50,7 +52,7 @@ struct KeyboardEvent {
 
     bool hasInput() const {
         return !text.empty() || !pasteText.empty() || backspace || del || enter ||
-               left || right || home || end || selectAll || copy || cut || escape;
+               left || right || up || down || home || end || selectAll || copy || cut || escape;
     }
 };
 
@@ -75,6 +77,8 @@ struct InputQueue {
     bool enter = false;
     bool left = false;
     bool right = false;
+    bool up = false;
+    bool down = false;
     bool home = false;
     bool end = false;
     bool selectAll = false;
@@ -191,6 +195,12 @@ inline void installInputCallbacks(GLFWwindow* window) {
         case GLFW_KEY_RIGHT:
             queue.right = true;
             break;
+        case GLFW_KEY_UP:
+            queue.up = true;
+            break;
+        case GLFW_KEY_DOWN:
+            queue.down = true;
+            break;
         case GLFW_KEY_HOME:
             queue.home = true;
             break;
@@ -216,6 +226,8 @@ inline std::pair<KeyboardEvent, ScrollEvent> consumeInputEvents(GLFWwindow* wind
     keyboard.enter = queue.enter;
     keyboard.left = queue.left;
     keyboard.right = queue.right;
+    keyboard.up = queue.up;
+    keyboard.down = queue.down;
     keyboard.home = queue.home;
     keyboard.end = queue.end;
     keyboard.selectAll = queue.selectAll;

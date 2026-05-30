@@ -86,7 +86,6 @@ public:
         const float textLineHeight = fontSize_;
         const float textY = multiline_ ? inset_ : std::max(0.0f, (height_ - textLineHeight) * 0.5f);
         const float textHeight = multiline_ ? std::max(0.0f, height_ - inset_ * 2.0f) : textLineHeight;
-        const float lineY = textY;
         const float width = width_;
         const float inset = inset_;
         const float fontSize = fontSize_;
@@ -94,17 +93,20 @@ public:
         InputState& state = stateFor(id_);
         if (state.text != text_) {
             state.text = text_;
+            ++state.textRevision;
             state.cursor = clampUtf8Boundary(state.text, static_cast<int>(state.text.size()));
             state.selectionStart = state.cursor;
             state.selectionEnd = state.cursor;
             state.horizontalScroll = 0.0f;
+            state.verticalScroll = 0.0f;
         }
         state.cursor = clampUtf8Boundary(state.text, state.cursor);
         state.selectionStart = clampUtf8Boundary(state.text, state.selectionStart);
         state.selectionEnd = clampUtf8Boundary(state.text, state.selectionEnd);
-        const InputLayout layout = InputLayout::build(state, textWidth, width_, inset_, fontFamily_, fontSize_);
+        const InputLayout layout = InputLayout::build(state, textWidth, textHeight, width_, inset_, textY, textLineHeight, fontFamily_, fontSize_, multiline_);
         const bool empty = state.text.empty();
-        const bool hasSelection = layout.selectionStart != layout.selectionEnd;
+        const bool hasSelection = !layout.selectionRects.empty();
+        const std::string textDirtyKey = id_ + ".text|" + std::to_string(state.textRevision) + (empty ? "|p" : "|v");
 
         ui_.stack(id_)
             .size(width_, height_)
@@ -113,28 +115,46 @@ public:
             .content([&] {
                 ui_.rect(hitId)
                     .size(width_, height_)
-                    .states(focused ? style_.focused : style_.background, style_.hover, style_.pressed)
+                    .states(style_.background,
+                            style_.background,
+                            style_.background)
                     .radius(style_.radius)
                     .border(1.0f, focused ? style_.focusBorder : style_.border)
                     .shadow(focused ? style_.shadow : core::Shadow{})
                     .transition(transition_)
                     .focusable()
-                    .imeRect(layout.clampedCursorX(), textY, 1.5f, textLineHeight)
+                    .imeRect(layout.clampedCursorX(), layout.cursorY, 1.5f, textLineHeight)
                     .onPress([&state, width, inset, layout](const core::PointerEvent& event, const core::Rect& bounds) {
                         state.lastBounds = bounds;
-                        state.cursor = clampUtf8Boundary(state.text, layout.cursorFromPointer(event.x, bounds, width, inset));
+                        state.cursor = clampUtf8Boundary(state.text, layout.cursorFromPointer(event.x, event.y, bounds, width, inset));
+                        state.hasPreferredCursorX = false;
                         clearSelection(state);
                         state.dragAnchor = state.cursor;
                         state.selecting = true;
                     })
                     .onFocusChanged(onFocus)
-                    .onDrag([&state, width, inset, fontSize, fontFamily, layout](const core::dsl::DragEvent& event) {
-                        state.cursor = clampUtf8Boundary(state.text, layout.cursorFromPointer(event.x, state.lastBounds, width, inset));
+                    .onDrag([&state, width, inset, fontSize, fontFamily, allowMultiline, textHeight, layout](const core::dsl::DragEvent& event) {
+                        state.cursor = clampUtf8Boundary(state.text, layout.cursorFromPointer(event.x, event.y, state.lastBounds, width, inset));
+                        state.hasPreferredCursorX = false;
                         state.selectionStart = state.dragAnchor;
                         state.selectionEnd = state.cursor;
-                        syncScroll(state, std::max(0.0f, width - inset * 2.0f), fontFamily, fontSize);
+                        if (allowMultiline) {
+                            syncVerticalScroll(state, layout, textHeight);
+                        } else {
+                            syncScroll(state, std::max(0.0f, width - inset * 2.0f), fontFamily, fontSize);
+                        }
                     })
-                    .onTextInput([&state, allowMultiline, onChange, onEnter, width, inset, fontSize, fontFamily](const core::KeyboardEvent& event) {
+                    .onScroll([&state, allowMultiline, layout, fontSize](const core::ScrollEvent& event) {
+                        if (!allowMultiline || layout.maxVerticalScroll <= 0.0f) {
+                            return;
+                        }
+                        const float step = std::max(12.0f, fontSize * 2.2f);
+                        state.verticalScroll = std::clamp(
+                            state.verticalScroll - static_cast<float>(event.y) * step,
+                            0.0f,
+                            layout.maxVerticalScroll);
+                    })
+                    .onTextInput([&state, allowMultiline, onChange, onEnter, width, inset, fontSize, fontFamily, textHeight](const core::KeyboardEvent& event) {
                         bool changed = false;
 
                         if (event.selectAll) {
@@ -151,24 +171,39 @@ public:
                             changed = true;
                         }
                         if (event.left) {
-                            moveCursor(state, -1, event.shift, fontFamily, fontSize);
+                            moveCursor(state, -1, event.shift, fontFamily, fontSize, allowMultiline, std::max(0.0f, width - inset * 2.0f));
                         }
                         if (event.right) {
-                            moveCursor(state, 1, event.shift, fontFamily, fontSize);
+                            moveCursor(state, 1, event.shift, fontFamily, fontSize, allowMultiline, std::max(0.0f, width - inset * 2.0f));
+                        }
+                        if (event.up && allowMultiline) {
+                            moveCursorVertical(state, -1, event.shift, fontFamily, fontSize, std::max(0.0f, width - inset * 2.0f), textHeight);
+                        }
+                        if (event.down && allowMultiline) {
+                            moveCursorVertical(state, 1, event.shift, fontFamily, fontSize, std::max(0.0f, width - inset * 2.0f), textHeight);
                         }
                         if (event.home) {
-                            moveCursorTo(state, 0, event.shift);
+                            if (allowMultiline) {
+                                moveCursorToLineEdge(state, false, event.shift, fontFamily, fontSize, std::max(0.0f, width - inset * 2.0f));
+                            } else {
+                                moveCursorTo(state, 0, event.shift);
+                            }
                         }
                         if (event.end) {
-                            moveCursorTo(state, static_cast<int>(state.text.size()), event.shift);
+                            if (allowMultiline) {
+                                moveCursorToLineEdge(state, true, event.shift, fontFamily, fontSize, std::max(0.0f, width - inset * 2.0f));
+                            } else {
+                                moveCursorTo(state, static_cast<int>(state.text.size()), event.shift);
+                            }
                         }
                         if (event.del) {
                             if (hasTextSelection(state)) {
                                 eraseSelection(state);
                                 changed = true;
                             } else if (state.cursor < static_cast<int>(state.text.size())) {
-                                const int next = nextCursorIndex(state, fontFamily, fontSize);
+                                const int next = nextCursorIndex(state, fontFamily, fontSize, allowMultiline, std::max(0.0f, width - inset * 2.0f));
                                 state.text.erase(static_cast<std::size_t>(state.cursor), static_cast<std::size_t>(next - state.cursor));
+                                ++state.textRevision;
                                 changed = true;
                             }
                         }
@@ -177,8 +212,9 @@ public:
                                 eraseSelection(state);
                                 changed = true;
                             } else if (state.cursor > 0) {
-                                const int previous = prevCursorIndex(state, fontFamily, fontSize);
+                                const int previous = prevCursorIndex(state, fontFamily, fontSize, allowMultiline, std::max(0.0f, width - inset * 2.0f));
                                 state.text.erase(static_cast<std::size_t>(previous), static_cast<std::size_t>(state.cursor - previous));
+                                ++state.textRevision;
                                 state.cursor = previous;
                                 clearSelection(state);
                                 changed = true;
@@ -203,7 +239,11 @@ public:
                         if (event.escape && onEnter) {
                             onEnter();
                         }
-                        syncScroll(state, std::max(0.0f, width - inset * 2.0f), fontFamily, fontSize);
+                        if (allowMultiline) {
+                            state.horizontalScroll = 0.0f;
+                        } else {
+                            syncScroll(state, std::max(0.0f, width - inset * 2.0f), fontFamily, fontSize);
+                        }
                         if (changed && onChange) {
                             onChange(state.text);
                         }
@@ -211,17 +251,21 @@ public:
                     .build();
 
                 if (hasSelection) {
-                    ui_.rect(id_ + ".selection")
-                        .position(layout.clippedSelectionX, lineY)
-                        .size(layout.clippedSelectionWidth, textLineHeight)
-                        .color(theme::withAlpha(style_.cursor, 0.24f))
-                        .radius(3.0f)
-                        .build();
+                    for (size_t index = 0; index < layout.selectionRects.size(); ++index) {
+                        const auto& selectionRect = layout.selectionRects[index];
+                        ui_.rect(id_ + ".selection." + std::to_string(index))
+                            .position(selectionRect.x, selectionRect.y)
+                            .size(selectionRect.width, selectionRect.height)
+                            .color(theme::withAlpha(style_.cursor, 0.24f))
+                            .radius(multiline_ ? 0.0f : 3.0f)
+                            .build();
+                    }
                 }
 
                 ui_.text(id_ + ".text")
-                    .position(inset_ - state.horizontalScroll, textY)
+                    .position(inset_ - state.horizontalScroll, textY - state.verticalScroll)
                     .size(layout.visibleTextWidth, textHeight)
+                    .dirtyKey(textDirtyKey)
                     .text(empty ? placeholder_ : state.text)
                     .fontSize(fontSize_)
                     .fontFamily(fontFamily_)
@@ -233,7 +277,7 @@ public:
 
                 if (focused) {
                     ui_.rect(id_ + ".cursor")
-                        .position(layout.clampedCursorX(), std::max(0.0f, (height_ - fontSize_ * 1.18f) * 0.5f))
+                        .position(layout.clampedCursorX(), layout.cursorY)
                         .size(1.5f, fontSize_ * 1.18f)
                         .color(style_.cursor)
                         .radius(1.0f)
@@ -244,6 +288,20 @@ public:
     }
 
 private:
+    struct TextLine {
+        int start = 0;
+        int end = 0;
+        bool hardBreakAfter = false;
+        core::TextPrimitive::TextMetrics metrics;
+    };
+
+    struct TextSelectionRect {
+        float x = 0.0f;
+        float y = 0.0f;
+        float width = 0.0f;
+        float height = 0.0f;
+    };
+
     struct InputState {
         std::string text;
         int cursor = 0;
@@ -251,87 +309,234 @@ private:
         int selectionEnd = 0;
         int dragAnchor = 0;
         bool selecting = false;
+        bool hasPreferredCursorX = false;
+        float preferredCursorX = 0.0f;
         float horizontalScroll = 0.0f;
+        float verticalScroll = 0.0f;
+        unsigned long long textRevision = 0;
         core::Rect lastBounds;
+        unsigned long long cachedTextRevision = static_cast<unsigned long long>(-1);
+        std::string cachedFontFamily;
+        float cachedFontSize = 0.0f;
+        float cachedViewportWidth = -1.0f;
+        bool cachedMultiline = false;
+        core::TextPrimitive::TextMetrics cachedMetrics;
+        std::vector<TextLine> cachedLines;
+        float cachedTextWidth = 0.0f;
+        bool layoutCacheValid = false;
     };
 
     struct InputLayout {
+        using Line = TextLine;
+        using SelectionRect = TextSelectionRect;
+
         core::TextPrimitive::TextMetrics metrics;
+        const std::vector<Line>* lines = nullptr;
+        std::vector<SelectionRect> selectionRects;
         float viewportWidth = 0.0f;
+        float viewportHeight = 0.0f;
         float controlWidth = 0.0f;
         float inset = 0.0f;
+        float textTop = 0.0f;
+        float lineHeight = 0.0f;
         float scroll = 0.0f;
         float textWidth = 0.0f;
         float cursorPixel = 0.0f;
         float cursorX = 0.0f;
+        float cursorY = 0.0f;
         float visibleTextWidth = 0.0f;
+        float maxVerticalScroll = 0.0f;
         int selectionStart = 0;
         int selectionEnd = 0;
+        int cursorLine = 0;
+        bool multiline = false;
         float clippedSelectionX = 0.0f;
         float clippedSelectionWidth = 0.0f;
 
         static InputLayout build(InputState& state,
                                  float viewportWidth,
+                                 float viewportHeight,
                                  float controlWidth,
                                  float inset,
+                                 float textTop,
+                                 float lineHeight,
                                  const std::string& fontFamily,
-                                 float fontSize) {
+                                 float fontSize,
+                                 bool multiline) {
             InputLayout layout;
-            layout.metrics = measureMetrics(state.text, fontFamily, fontSize);
-            syncScroll(state, viewportWidth, layout.metrics, fontSize);
             layout.viewportWidth = viewportWidth;
+            layout.viewportHeight = viewportHeight;
             layout.controlWidth = controlWidth;
             layout.inset = inset;
-            layout.scroll = state.horizontalScroll;
-            layout.textWidth = layout.metrics.width;
-            layout.cursorPixel = caretX(layout.metrics, state.cursor);
-            layout.cursorX = inset + layout.cursorPixel - layout.scroll;
-            layout.visibleTextWidth = std::max(viewportWidth, layout.textWidth + 24.0f);
+            layout.textTop = textTop;
+            layout.lineHeight = lineHeight;
+            layout.multiline = multiline;
+            ensureLayoutCache(state, fontFamily, fontSize, viewportWidth, multiline);
+            layout.lines = &state.cachedLines;
+
+            if (multiline) {
+                layout.cursorLine = layout.lineIndexFor(state.cursor);
+                const Line& cursorLine = layout.lineList()[static_cast<size_t>(layout.cursorLine)];
+                layout.metrics = cursorLine.metrics;
+                state.horizontalScroll = 0.0f;
+                layout.scroll = 0.0f;
+                layout.textWidth = state.cachedTextWidth;
+                layout.cursorPixel = caretX(cursorLine.metrics, state.cursor - cursorLine.start);
+                layout.cursorX = inset + layout.cursorPixel;
+                layout.maxVerticalScroll = std::max(0.0f, static_cast<float>(layout.lineList().size()) * lineHeight - viewportHeight);
+                state.verticalScroll = std::clamp(state.verticalScroll, 0.0f, layout.maxVerticalScroll);
+                syncVerticalScroll(state, layout.cursorLine, lineHeight, viewportHeight);
+                state.verticalScroll = std::clamp(state.verticalScroll, 0.0f, layout.maxVerticalScroll);
+                layout.currentVerticalScroll = state.verticalScroll;
+                layout.cursorY = textTop + static_cast<float>(layout.cursorLine) * lineHeight - state.verticalScroll;
+                layout.visibleTextWidth = viewportWidth;
+            } else {
+                layout.metrics = state.cachedMetrics;
+                syncScroll(state, viewportWidth, layout.metrics, fontSize);
+                state.verticalScroll = 0.0f;
+                layout.cursorLine = 0;
+                layout.scroll = state.horizontalScroll;
+                layout.textWidth = layout.metrics.width;
+                layout.cursorPixel = caretX(layout.metrics, state.cursor);
+                layout.cursorX = inset + layout.cursorPixel - layout.scroll;
+                layout.cursorY = textTop;
+                layout.currentVerticalScroll = 0.0f;
+                layout.visibleTextWidth = std::max(viewportWidth, layout.textWidth + 24.0f);
+            }
 
             const auto selection = selectionRange(state);
             layout.selectionStart = selection.first;
             layout.selectionEnd = selection.second;
-            const float selectionStartX = layout.xFor(selection.first);
-            const float selectionEndX = layout.xFor(selection.second);
-            const float rawX = inset + selectionStartX - layout.scroll;
-            const float rawRight = inset + selectionEndX - layout.scroll;
-            const float clipLeft = inset;
-            const float clipRight = std::max(inset, controlWidth - inset);
-            layout.clippedSelectionX = std::clamp(rawX, clipLeft, clipRight);
-            const float clippedRight = std::clamp(rawRight, clipLeft, clipRight);
-            layout.clippedSelectionWidth = std::max(1.0f, clippedRight - layout.clippedSelectionX);
+            layout.buildSelectionRects(selection.first, selection.second);
             return layout;
         }
 
+        const std::vector<Line>& lineList() const {
+            static const std::vector<Line> emptyLines;
+            return lines ? *lines : emptyLines;
+        }
+
         float xFor(int byteIndex) const {
-            return caretX(metrics, byteIndex);
+            const int lineIndex = lineIndexFor(byteIndex);
+            const Line& line = lineList()[static_cast<size_t>(lineIndex)];
+            return caretX(line.metrics, byteIndex - line.start);
         }
 
         float clampedCursorX() const {
             return std::clamp(cursorX, inset, std::max(inset, controlWidth - inset));
         }
 
-        int cursorFromPointer(double pointerX, const core::Rect& bounds, float width, float inputInset) const {
+        int cursorFromPointer(double pointerX, double pointerY, const core::Rect& bounds, float width, float inputInset) const {
             const float scale = width > 0.0f ? bounds.width / width : 1.0f;
             const float localX = static_cast<float>((pointerX - bounds.x) / std::max(0.001f, scale));
-            return closestCaret(localX - inputInset + scroll);
+            const float localY = static_cast<float>((pointerY - bounds.y) / std::max(0.001f, scale));
+            const int lineIndex = multiline ? lineIndexFromY(localY + currentVerticalScroll) : 0;
+            return closestCaret(lineIndex, localX - inputInset + scroll);
         }
 
-        int closestCaret(float targetX) const {
-            if (metrics.byteIndices.empty() || metrics.caretX.empty()) {
+        int closestCaret(int lineIndex, float targetX) const {
+            const std::vector<Line>& lineListRef = lineList();
+            if (lineListRef.empty()) {
                 return 0;
             }
-            const size_t count = std::min(metrics.byteIndices.size(), metrics.caretX.size());
-            int bestIndex = metrics.byteIndices.front();
-            float bestDistance = std::fabs(targetX - metrics.caretX.front());
+            const Line& line = lineListRef[static_cast<size_t>(std::clamp(lineIndex, 0, static_cast<int>(lineListRef.size()) - 1))];
+            if (line.metrics.byteIndices.empty() || line.metrics.caretX.empty()) {
+                return line.start;
+            }
+            const size_t count = std::min(line.metrics.byteIndices.size(), line.metrics.caretX.size());
+            int bestIndex = line.metrics.byteIndices.front();
+            float bestDistance = std::fabs(targetX - line.metrics.caretX.front());
             for (size_t i = 1; i < count; ++i) {
-                const float distance = std::fabs(targetX - metrics.caretX[i]);
+                const float distance = std::fabs(targetX - line.metrics.caretX[i]);
                 if (distance < bestDistance) {
                     bestDistance = distance;
-                    bestIndex = metrics.byteIndices[i];
+                    bestIndex = line.metrics.byteIndices[i];
                 }
             }
-            return bestIndex;
+            return line.start + bestIndex;
+        }
+
+        int lineIndexFor(int byteIndex) const {
+            const std::vector<Line>& lineListRef = lineList();
+            if (lineListRef.empty()) {
+                return 0;
+            }
+            const auto it = std::upper_bound(
+                lineListRef.begin(),
+                lineListRef.end(),
+                byteIndex,
+                [](int value, const Line& line) {
+                    return value < line.start;
+                });
+            int index = it == lineListRef.begin()
+                ? 0
+                : static_cast<int>(std::distance(lineListRef.begin(), it)) - 1;
+            index = std::clamp(index, 0, static_cast<int>(lineListRef.size()) - 1);
+            if (index + 1 < static_cast<int>(lineListRef.size()) &&
+                !lineListRef[static_cast<size_t>(index)].hardBreakAfter &&
+                byteIndex >= lineListRef[static_cast<size_t>(index)].end) {
+                ++index;
+            }
+            return std::clamp(index, 0, static_cast<int>(lineListRef.size()) - 1);
+        }
+
+        int lineIndexFromY(float localY) const {
+            const std::vector<Line>& lineListRef = lineList();
+            if (lineListRef.empty() || lineHeight <= 0.0f) {
+                return 0;
+            }
+            const int line = static_cast<int>(std::floor((localY - textTop) / lineHeight));
+            return std::clamp(line, 0, static_cast<int>(lineListRef.size()) - 1);
+        }
+
+        float currentVerticalScroll = 0.0f;
+
+        void buildSelectionRects(int startIndex, int endIndex) {
+            const std::vector<Line>& lineListRef = lineList();
+            if (startIndex == endIndex || lineListRef.empty()) {
+                return;
+            }
+            if (startIndex > endIndex) {
+                std::swap(startIndex, endIndex);
+            }
+
+            const float clipLeft = inset;
+            const float clipRight = std::max(inset, controlWidth - inset);
+            const int firstSelectedLine = lineIndexFor(startIndex);
+            const int lastSelectedLine = lineIndexFor(std::max(startIndex, endIndex - 1));
+            const int firstVisibleLine = lineIndexFromY(textTop + currentVerticalScroll - lineHeight);
+            const int lastVisibleLine = lineIndexFromY(textTop + currentVerticalScroll + viewportHeight + lineHeight);
+            const int firstLine = std::max(firstSelectedLine, firstVisibleLine);
+            const int lastLine = std::min(lastSelectedLine, lastVisibleLine);
+            for (int lineIndex = firstLine; lineIndex <= lastLine; ++lineIndex) {
+                const size_t i = static_cast<size_t>(lineIndex);
+                const Line& line = lineListRef[i];
+                const int selectableEnd = line.end + (line.hardBreakAfter ? 1 : 0);
+
+                const int lineStart = std::clamp(startIndex, line.start, line.end);
+                const int lineEnd = std::clamp(endIndex, line.start, line.end);
+                const bool selectionContinuesPastLine = endIndex > line.end && startIndex <= line.end;
+                if (lineStart == lineEnd && !selectionContinuesPastLine) {
+                    continue;
+                }
+
+                const bool coversWholeLine = startIndex <= line.start && endIndex >= selectableEnd;
+                const float startX = coversWholeLine ? 0.0f : caretX(line.metrics, lineStart - line.start);
+                const float endX = selectionContinuesPastLine
+                    ? (line.hardBreakAfter || coversWholeLine ? viewportWidth : std::max(line.metrics.width, startX + 1.0f))
+                    : caretX(line.metrics, lineEnd - line.start);
+                const float rawX = inset + startX - scroll;
+                const float rawRight = inset + endX - scroll;
+                const float clippedX = std::clamp(rawX, clipLeft, clipRight);
+                const float clippedRight = std::clamp(rawRight, clipLeft, clipRight);
+                const float width = std::max(1.0f, clippedRight - clippedX);
+                const float y = textTop + static_cast<float>(i) * lineHeight - currentVerticalScroll;
+                const float height = i + 1 < lineListRef.size() ? lineHeight + 1.0f : lineHeight;
+                if (y + height < textTop || y > textTop + viewportHeight) {
+                    continue;
+                }
+                selectionRects.push_back({clippedX, y, width, height});
+            }
         }
     };
 
@@ -343,7 +548,7 @@ private:
     static std::string filteredText(const std::string& input, bool multiline) {
         std::string output;
         for (char ch : input) {
-            if (!multiline && (ch == '\n' || ch == '\r')) {
+            if (ch == '\r' || (!multiline && ch == '\n')) {
                 continue;
             }
             output.push_back(ch);
@@ -380,6 +585,7 @@ private:
             return;
         }
         state.text.erase(static_cast<std::size_t>(range.first), static_cast<std::size_t>(range.second - range.first));
+        ++state.textRevision;
         state.cursor = range.first;
         clearSelection(state);
     }
@@ -392,19 +598,108 @@ private:
             eraseSelection(state);
         }
         state.text.insert(static_cast<std::size_t>(state.cursor), value);
+        ++state.textRevision;
         state.cursor += static_cast<int>(value.size());
+        state.hasPreferredCursorX = false;
         clearSelection(state);
     }
 
-    static void moveCursor(InputState& state, int direction, bool keepSelection, const std::string& fontFamily, float fontSize) {
+    static void moveCursor(InputState& state,
+                           int direction,
+                           bool keepSelection,
+                           const std::string& fontFamily,
+                           float fontSize,
+                           bool multiline,
+                           float viewportWidth) {
         const int previous = state.cursor;
         if (!keepSelection && hasTextSelection(state)) {
             const auto range = selectionRange(state);
             state.cursor = direction < 0 ? range.first : range.second;
+            state.hasPreferredCursorX = false;
             clearSelection(state);
             return;
         }
-        state.cursor = direction < 0 ? prevCursorIndex(state, fontFamily, fontSize) : nextCursorIndex(state, fontFamily, fontSize);
+        state.cursor = direction < 0
+            ? prevCursorIndex(state, fontFamily, fontSize, multiline, viewportWidth)
+            : nextCursorIndex(state, fontFamily, fontSize, multiline, viewportWidth);
+        state.hasPreferredCursorX = false;
+        if (keepSelection) {
+            if (!hasTextSelection(state)) {
+                state.selectionStart = previous;
+            }
+            state.selectionEnd = state.cursor;
+        } else {
+            clearSelection(state);
+        }
+    }
+
+    static void moveCursorToLineEdge(InputState& state,
+                                     bool toEnd,
+                                     bool keepSelection,
+                                     const std::string& fontFamily,
+                                     float fontSize,
+                                     float viewportWidth) {
+        const std::vector<InputLayout::Line>& lines = cachedLines(state, fontFamily, fontSize, viewportWidth, true);
+        if (lines.empty()) {
+            moveCursorTo(state, toEnd ? static_cast<int>(state.text.size()) : 0, keepSelection);
+            return;
+        }
+
+        const int lineIndex = lineIndexFor(lines, state.cursor);
+        const InputLayout::Line& line = lines[static_cast<size_t>(lineIndex)];
+        moveCursorTo(state, toEnd ? line.end : line.start, keepSelection);
+    }
+
+    static void moveCursorVertical(InputState& state,
+                                   int direction,
+                                   bool keepSelection,
+                                   const std::string& fontFamily,
+                                   float fontSize,
+                                   float viewportWidth,
+                                   float viewportHeight) {
+        const std::vector<InputLayout::Line>& lines = cachedLines(state, fontFamily, fontSize, viewportWidth, true);
+        if (lines.empty()) {
+            return;
+        }
+
+        auto xFor = [&](int byteIndex) {
+            const int lineIndex = lineIndexFor(lines, byteIndex);
+            const InputLayout::Line& line = lines[static_cast<size_t>(lineIndex)];
+            return caretX(line.metrics, byteIndex - line.start);
+        };
+
+        auto closestOnLine = [&](int lineIndex, float targetX) {
+            const InputLayout::Line& line = lines[static_cast<size_t>(std::clamp(lineIndex, 0, static_cast<int>(lines.size()) - 1))];
+            if (line.metrics.byteIndices.empty() || line.metrics.caretX.empty()) {
+                return line.start;
+            }
+            const size_t count = std::min(line.metrics.byteIndices.size(), line.metrics.caretX.size());
+            int bestIndex = line.metrics.byteIndices.front();
+            float bestDistance = std::fabs(targetX - line.metrics.caretX.front());
+            for (size_t i = 1; i < count; ++i) {
+                const float distance = std::fabs(targetX - line.metrics.caretX[i]);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestIndex = line.metrics.byteIndices[i];
+                }
+            }
+            return line.start + bestIndex;
+        };
+
+        const int previous = state.cursor;
+        const int currentLine = lineIndexFor(lines, state.cursor);
+        const int nextLine = std::clamp(currentLine + direction, 0, static_cast<int>(lines.size()) - 1);
+        if (nextLine == currentLine) {
+            return;
+        }
+
+        if (!state.hasPreferredCursorX) {
+            state.preferredCursorX = xFor(state.cursor);
+            state.hasPreferredCursorX = true;
+        }
+        state.cursor = clampUtf8Boundary(state.text, closestOnLine(nextLine, state.preferredCursorX));
+        syncVerticalScroll(state, nextLine, fontSize, viewportHeight);
+
         if (keepSelection) {
             if (!hasTextSelection(state)) {
                 state.selectionStart = previous;
@@ -418,6 +713,7 @@ private:
     static void moveCursorTo(InputState& state, int position, bool keepSelection) {
         const int previous = state.cursor;
         state.cursor = clampUtf8Boundary(state.text, position);
+        state.hasPreferredCursorX = false;
         if (keepSelection) {
             if (!hasTextSelection(state)) {
                 state.selectionStart = previous;
@@ -441,6 +737,155 @@ private:
 
     static core::TextPrimitive::TextMetrics measureMetrics(const std::string& value, const std::string& fontFamily, float fontSize) {
         return core::TextPrimitive::measureTextMetrics(value, fontFamily, fontSize, 400);
+    }
+
+    static bool sameLayoutCacheKey(const InputState& state,
+                                   const std::string& fontFamily,
+                                   float fontSize,
+                                   float viewportWidth,
+                                   bool multiline) {
+        return state.layoutCacheValid &&
+               state.cachedTextRevision == state.textRevision &&
+               state.cachedFontFamily == fontFamily &&
+               std::fabs(state.cachedFontSize - fontSize) < 0.001f &&
+               std::fabs(state.cachedViewportWidth - viewportWidth) < 0.001f &&
+               state.cachedMultiline == multiline;
+    }
+
+    static void ensureLayoutCache(InputState& state,
+                                  const std::string& fontFamily,
+                                  float fontSize,
+                                  float viewportWidth,
+                                  bool multiline) {
+        if (sameLayoutCacheKey(state, fontFamily, fontSize, viewportWidth, multiline)) {
+            return;
+        }
+
+        state.cachedTextRevision = state.textRevision;
+        state.cachedFontFamily = fontFamily;
+        state.cachedFontSize = fontSize;
+        state.cachedViewportWidth = viewportWidth;
+        state.cachedMultiline = multiline;
+        state.cachedMetrics = measureMetrics(state.text, fontFamily, fontSize);
+        if (multiline) {
+            state.cachedLines = measureLines(state.text, fontFamily, fontSize, viewportWidth);
+            state.cachedTextWidth = 0.0f;
+            for (const TextLine& line : state.cachedLines) {
+                state.cachedTextWidth = std::max(state.cachedTextWidth, line.metrics.width);
+            }
+        } else {
+            state.cachedLines = {{0, static_cast<int>(state.text.size()), false, state.cachedMetrics}};
+            state.cachedTextWidth = state.cachedMetrics.width;
+        }
+        state.layoutCacheValid = true;
+    }
+
+    static const std::vector<InputLayout::Line>& cachedLines(InputState& state,
+                                                            const std::string& fontFamily,
+                                                            float fontSize,
+                                                            float viewportWidth,
+                                                            bool multiline) {
+        ensureLayoutCache(state, fontFamily, fontSize, viewportWidth, multiline);
+        return state.cachedLines;
+    }
+
+    static const core::TextPrimitive::TextMetrics& cachedMetrics(InputState& state,
+                                                                 const std::string& fontFamily,
+                                                                 float fontSize,
+                                                                 float viewportWidth) {
+        ensureLayoutCache(state, fontFamily, fontSize, viewportWidth, false);
+        return state.cachedMetrics;
+    }
+
+    static std::vector<InputLayout::Line> measureLines(const std::string& value,
+                                                       const std::string& fontFamily,
+                                                       float fontSize,
+                                                       float viewportWidth) {
+        std::vector<InputLayout::Line> lines;
+        int start = 0;
+        while (start <= static_cast<int>(value.size())) {
+            const size_t newline = value.find('\n', static_cast<size_t>(start));
+            const int end = newline == std::string::npos
+                ? static_cast<int>(value.size())
+                : static_cast<int>(newline);
+            const std::string lineText = value.substr(static_cast<size_t>(start), static_cast<size_t>(end - start));
+            const core::TextPrimitive::TextMetrics metrics = measureMetrics(lineText, fontFamily, fontSize);
+            if (viewportWidth <= 1.0f || metrics.byteIndices.size() <= 2 || metrics.width <= viewportWidth) {
+                lines.push_back({start, end, newline != std::string::npos, metrics});
+            } else {
+                int segmentStart = 0;
+                float segmentStartX = 0.0f;
+                int previousStop = 0;
+                const size_t count = std::min(metrics.byteIndices.size(), metrics.caretX.size());
+                for (size_t i = 1; i < count; ++i) {
+                    const int stop = metrics.byteIndices[i];
+                    const float x = metrics.caretX[i];
+                    if (previousStop > segmentStart && x - segmentStartX > viewportWidth) {
+                        const int segmentEnd = previousStop;
+                        const std::string segmentText = lineText.substr(static_cast<size_t>(segmentStart),
+                                                                        static_cast<size_t>(segmentEnd - segmentStart));
+                        lines.push_back({start + segmentStart, start + segmentEnd, false, measureMetrics(segmentText, fontFamily, fontSize)});
+                        segmentStart = segmentEnd;
+                        segmentStartX = caretX(metrics, segmentStart);
+                    }
+                    previousStop = stop;
+                }
+                if (segmentStart < static_cast<int>(lineText.size()) || lineText.empty()) {
+                    const std::string segmentText = lineText.substr(static_cast<size_t>(segmentStart));
+                    lines.push_back({start + segmentStart, end, newline != std::string::npos, measureMetrics(segmentText, fontFamily, fontSize)});
+                }
+            }
+            if (newline == std::string::npos) {
+                break;
+            }
+            start = static_cast<int>(newline) + 1;
+        }
+        if (lines.empty()) {
+            lines.push_back({0, 0, false, measureMetrics({}, fontFamily, fontSize)});
+        }
+        return lines;
+    }
+
+    static int lineIndexFor(const std::vector<InputLayout::Line>& lines, int byteIndex) {
+        if (lines.empty()) {
+            return 0;
+        }
+        const auto it = std::upper_bound(
+            lines.begin(),
+            lines.end(),
+            byteIndex,
+            [](int value, const InputLayout::Line& line) {
+                return value < line.start;
+            });
+        int index = it == lines.begin()
+            ? 0
+            : static_cast<int>(std::distance(lines.begin(), it)) - 1;
+        index = std::clamp(index, 0, static_cast<int>(lines.size()) - 1);
+        if (index + 1 < static_cast<int>(lines.size()) &&
+            !lines[static_cast<size_t>(index)].hardBreakAfter &&
+            byteIndex >= lines[static_cast<size_t>(index)].end) {
+            ++index;
+        }
+        return std::clamp(index, 0, static_cast<int>(lines.size()) - 1);
+    }
+
+    static void syncVerticalScroll(InputState& state, int cursorLine, float lineHeight, float viewportHeight) {
+        if (lineHeight <= 0.0f || viewportHeight <= 0.0f) {
+            state.verticalScroll = 0.0f;
+            return;
+        }
+        const float cursorTop = static_cast<float>(std::max(0, cursorLine)) * lineHeight;
+        const float cursorBottom = cursorTop + lineHeight;
+        if (cursorTop - state.verticalScroll < 0.0f) {
+            state.verticalScroll = cursorTop;
+        } else if (cursorBottom - state.verticalScroll > viewportHeight) {
+            state.verticalScroll = cursorBottom - viewportHeight;
+        }
+        state.verticalScroll = std::max(0.0f, state.verticalScroll);
+    }
+
+    static void syncVerticalScroll(InputState& state, const InputLayout& layout, float viewportHeight) {
+        syncVerticalScroll(state, layout.lineIndexFor(state.cursor), layout.lineHeight, viewportHeight);
     }
 
     static float caretX(const core::TextPrimitive::TextMetrics& metrics, int byteIndex) {
@@ -476,17 +921,68 @@ private:
         return *it;
     }
 
-    static int prevCursorIndex(const InputState& state, const std::string& fontFamily, float fontSize) {
-        return clampUtf8Boundary(state.text, previousCaretIndex(measureMetrics(state.text, fontFamily, fontSize), state.cursor));
+    static int previousCaretIndex(const std::vector<InputLayout::Line>& lines, int byteIndex) {
+        if (lines.empty()) {
+            return 0;
+        }
+        const int lineIndex = lineIndexFor(lines, byteIndex);
+        const InputLayout::Line& line = lines[static_cast<size_t>(lineIndex)];
+        if (line.hardBreakAfter && byteIndex == line.end + 1) {
+            return line.end;
+        }
+        if (byteIndex > line.start) {
+            return line.start + previousCaretIndex(line.metrics, byteIndex - line.start);
+        }
+        if (lineIndex <= 0) {
+            return line.start;
+        }
+        const InputLayout::Line& previousLine = lines[static_cast<size_t>(lineIndex - 1)];
+        return previousLine.end;
     }
 
-    static int nextCursorIndex(const InputState& state, const std::string& fontFamily, float fontSize) {
-        return clampUtf8Boundary(state.text, nextCaretIndex(measureMetrics(state.text, fontFamily, fontSize), state.cursor));
+    static int nextCaretIndex(const std::vector<InputLayout::Line>& lines, const std::string& text, int byteIndex) {
+        if (lines.empty()) {
+            return 0;
+        }
+        const int lineIndex = lineIndexFor(lines, byteIndex);
+        const InputLayout::Line& line = lines[static_cast<size_t>(lineIndex)];
+        if (line.hardBreakAfter && byteIndex == line.end) {
+            return std::min(static_cast<int>(text.size()), line.end + 1);
+        }
+        if (byteIndex < line.end) {
+            return line.start + nextCaretIndex(line.metrics, byteIndex - line.start);
+        }
+        if (lineIndex + 1 >= static_cast<int>(lines.size())) {
+            return line.end;
+        }
+        const InputLayout::Line& nextLine = lines[static_cast<size_t>(lineIndex + 1)];
+        return nextLine.start;
+    }
+
+    static int prevCursorIndex(InputState& state,
+                               const std::string& fontFamily,
+                               float fontSize,
+                               bool multiline = false,
+                               float viewportWidth = 0.0f) {
+        if (multiline) {
+            return clampUtf8Boundary(state.text, previousCaretIndex(cachedLines(state, fontFamily, fontSize, viewportWidth, true), state.cursor));
+        }
+        return clampUtf8Boundary(state.text, previousCaretIndex(cachedMetrics(state, fontFamily, fontSize, viewportWidth), state.cursor));
+    }
+
+    static int nextCursorIndex(InputState& state,
+                               const std::string& fontFamily,
+                               float fontSize,
+                               bool multiline = false,
+                               float viewportWidth = 0.0f) {
+        if (multiline) {
+            return clampUtf8Boundary(state.text, nextCaretIndex(cachedLines(state, fontFamily, fontSize, viewportWidth, true), state.text, state.cursor));
+        }
+        return clampUtf8Boundary(state.text, nextCaretIndex(cachedMetrics(state, fontFamily, fontSize, viewportWidth), state.cursor));
     }
 
     static void syncScroll(InputState& state, float viewportWidth, const std::string& fontFamily, float fontSize) {
-        const core::TextPrimitive::TextMetrics metrics = measureMetrics(state.text, fontFamily, fontSize);
-        syncScroll(state, viewportWidth, metrics, fontSize);
+        syncScroll(state, viewportWidth, cachedMetrics(state, fontFamily, fontSize, viewportWidth), fontSize);
     }
 
     static void syncScroll(InputState& state,
@@ -519,7 +1015,9 @@ private:
         key += '|';
         key += std::to_string(static_cast<int>(std::lround(layout.scroll * 64.0f)));
         key += '|';
-        key += state.text;
+        key += std::to_string(static_cast<int>(std::lround(state.verticalScroll * 64.0f)));
+        key += '|';
+        key += std::to_string(state.textRevision);
         return key;
     }
 
