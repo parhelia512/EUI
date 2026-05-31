@@ -60,6 +60,32 @@
         "EUI_RENDER_BACKEND": "auto",
         "EUI_DEPS_MODE": "fetch"
       }
+    },
+    {
+      "name": "vulkan-glfw-release",
+      "displayName": "Vulkan GLFW Release",
+      "description": "Experimental Vulkan render backend with the GLFW window backend.",
+      "binaryDir": "${sourceDir}/build/vulkan-glfw-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "EUI_WINDOW_BACKEND": "glfw",
+        "EUI_RENDER_BACKEND": "vulkan",
+        "EUI_ENABLE_EXPERIMENTAL_VULKAN_BACKEND": "ON",
+        "EUI_DEPS_MODE": "auto"
+      }
+    },
+    {
+      "name": "vulkan-sdl2-release",
+      "displayName": "Vulkan SDL2 Release",
+      "description": "Experimental Vulkan render backend with the SDL2 window backend.",
+      "binaryDir": "${sourceDir}/build/vulkan-sdl2-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "EUI_WINDOW_BACKEND": "sdl2",
+        "EUI_RENDER_BACKEND": "vulkan",
+        "EUI_ENABLE_EXPERIMENTAL_VULKAN_BACKEND": "ON",
+        "EUI_DEPS_MODE": "auto"
+      }
     }
   ],
   "buildPresets": [
@@ -86,6 +112,16 @@
     {
       "name": "sdl2-fetch-release",
       "configurePreset": "sdl2-fetch-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "vulkan-glfw-release",
+      "configurePreset": "vulkan-glfw-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "vulkan-sdl2-release",
+      "configurePreset": "vulkan-sdl2-release",
       "configuration": "Release"
     }
   ]
