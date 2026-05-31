@@ -118,6 +118,7 @@ void VulkanRenderBackend::beginFrame(const RenderSurface& surface) {
     }
     frameActive_ = true;
     frameRecorded_ = false;
+    renderPassActive_ = false;
 }
 
 void VulkanRenderBackend::present() {
@@ -126,6 +127,10 @@ void VulkanRenderBackend::present() {
     }
     if (!frameRecorded_) {
         recordClearPass(clearColor_);
+    }
+    if (renderPassActive_) {
+        vkCmdEndRenderPass(commandBuffers_[currentImage_]);
+        renderPassActive_ = false;
     }
     vkEndCommandBuffer(commandBuffers_[currentImage_]);
 
@@ -147,6 +152,7 @@ void VulkanRenderBackend::present() {
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         vkCreateFence(device_, &fenceInfo, nullptr, &inFlight_);
         frameActive_ = false;
+        renderPassActive_ = false;
         return;
     }
 
@@ -465,7 +471,7 @@ void VulkanRenderBackend::recordClearPass(const core::Color& color) {
     renderPassInfo.pClearValues = &clearValue;
 
     vkCmdBeginRenderPass(commandBuffers_[currentImage_], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdEndRenderPass(commandBuffers_[currentImage_]);
+    renderPassActive_ = true;
     frameRecorded_ = true;
 }
 
@@ -473,6 +479,9 @@ void VulkanRenderBackend::destroySwapchain() {
     if (device_ == VK_NULL_HANDLE) {
         return;
     }
+    frameActive_ = false;
+    frameRecorded_ = false;
+    renderPassActive_ = false;
     if (inFlight_ != VK_NULL_HANDLE) {
         vkDestroyFence(device_, inFlight_, nullptr);
         inFlight_ = VK_NULL_HANDLE;

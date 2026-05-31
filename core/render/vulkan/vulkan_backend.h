@@ -68,6 +68,7 @@ private:
     std::uint32_t currentImage_ = 0;
     bool frameActive_ = false;
     bool frameRecorded_ = false;
+    bool renderPassActive_ = false;
     core::Color clearColor_{0.0f, 0.0f, 0.0f, 1.0f};
 };
 
