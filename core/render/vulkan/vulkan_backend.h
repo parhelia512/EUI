@@ -31,7 +31,6 @@ public:
     void blitRenderCache(int width, int height) override;
     void clear(const core::Color& color) override;
     void setScissor(bool enabled, const core::Rect& rect, int framebufferHeight) override;
-    void fillRect(const core::Rect& rect, const core::Color& color, int windowWidth, int windowHeight);
 
 private:
     bool createInstance();
@@ -70,8 +69,6 @@ private:
     bool frameActive_ = false;
     bool frameRecorded_ = false;
     bool renderPassActive_ = false;
-    bool scissorEnabled_ = false;
-    core::Rect scissorRect_{};
     core::Color clearColor_{0.0f, 0.0f, 0.0f, 1.0f};
 };
 
