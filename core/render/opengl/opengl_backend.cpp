@@ -103,6 +103,93 @@ bool OpenGLRenderBackend::valid() const {
     return initialized_ && window_ != nullptr;
 }
 
+void OpenGLRenderBackend::resetStateCache() {
+    stateCacheValid_ = false;
+    blendEnabled_ = false;
+    alphaBlendSet_ = false;
+    scissorEnabledState_ = false;
+    scissorX_ = 0;
+    scissorY_ = 0;
+    scissorWidth_ = 0;
+    scissorHeight_ = 0;
+    currentProgram_ = 0;
+    currentVao_ = 0;
+    currentArrayBuffer_ = 0;
+    currentTextureUnit_ = 0;
+    for (unsigned int& texture : currentTexture2D_) {
+        texture = 0;
+    }
+}
+
+void OpenGLRenderBackend::useProgram(unsigned int program) {
+    if (!stateCacheValid_ || currentProgram_ != program) {
+        glUseProgram(program);
+        currentProgram_ = program;
+        stateCacheValid_ = true;
+    }
+}
+
+void OpenGLRenderBackend::bindVertexArray(unsigned int vao) {
+    if (!stateCacheValid_ || currentVao_ != vao) {
+        glBindVertexArray(vao);
+        currentVao_ = vao;
+        stateCacheValid_ = true;
+    }
+}
+
+void OpenGLRenderBackend::bindArrayBuffer(unsigned int buffer) {
+    if (!stateCacheValid_ || currentArrayBuffer_ != buffer) {
+        glBindBuffer(GL_ARRAY_BUFFER, buffer);
+        currentArrayBuffer_ = buffer;
+        stateCacheValid_ = true;
+    }
+}
+
+void OpenGLRenderBackend::activeTextureUnit(unsigned int unit) {
+    if (unit >= 8) {
+        return;
+    }
+    if (!stateCacheValid_ || currentTextureUnit_ != unit) {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        currentTextureUnit_ = unit;
+        stateCacheValid_ = true;
+    }
+}
+
+void OpenGLRenderBackend::bindTexture2D(unsigned int texture) {
+    if (currentTextureUnit_ >= 8) {
+        glBindTexture(GL_TEXTURE_2D, texture);
+        resetStateCache();
+        return;
+    }
+    if (!stateCacheValid_ || currentTexture2D_[currentTextureUnit_] != texture) {
+        glBindTexture(GL_TEXTURE_2D, texture);
+        currentTexture2D_[currentTextureUnit_] = texture;
+        stateCacheValid_ = true;
+    }
+}
+
+void OpenGLRenderBackend::setBlendEnabled(bool enabled) {
+    if (!stateCacheValid_ || blendEnabled_ != enabled) {
+        if (enabled) {
+            glEnable(GL_BLEND);
+        } else {
+            glDisable(GL_BLEND);
+        }
+        blendEnabled_ = enabled;
+        stateCacheValid_ = true;
+    }
+}
+
+void OpenGLRenderBackend::setStandardAlphaBlend() {
+    setBlendEnabled(true);
+    if (!stateCacheValid_ || !alphaBlendSet_) {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        alphaBlendSet_ = true;
+        stateCacheValid_ = true;
+    }
+}
+
 void OpenGLRenderBackend::makeCurrent() {
     if (window_ == nullptr) {
         return;
@@ -114,6 +201,7 @@ void OpenGLRenderBackend::makeCurrent() {
 #else
     glfwMakeContextCurrent(static_cast<GLFWwindow*>(window_));
 #endif
+    resetStateCache();
 }
 
 void OpenGLRenderBackend::beginFrame(const RenderSurface& surface) {
@@ -156,6 +244,7 @@ bool OpenGLRenderBackend::ensureRenderCache(int width, int height) {
     const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
+    resetStateCache();
 
     if (!complete) {
         releaseRenderCache();
@@ -183,6 +272,7 @@ void OpenGLRenderBackend::releaseRenderCache() {
     }
     cacheWidth_ = 0;
     cacheHeight_ = 0;
+    resetStateCache();
 }
 
 void OpenGLRenderBackend::beginRenderCacheFrame(int width, int height) {
@@ -195,7 +285,7 @@ void OpenGLRenderBackend::endRenderCacheFrame() {
 }
 
 void OpenGLRenderBackend::blitRenderCache(int width, int height) {
-    glDisable(GL_SCISSOR_TEST);
+    setScissor(false, {}, height);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, cacheFramebuffer_);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     glBlitFramebuffer(0, 0, width, height,
@@ -211,7 +301,11 @@ void OpenGLRenderBackend::clear(const core::Color& color) {
 
 void OpenGLRenderBackend::setScissor(bool enabled, const core::Rect& rect, int framebufferHeight) {
     if (!enabled) {
-        glDisable(GL_SCISSOR_TEST);
+        if (!stateCacheValid_ || scissorEnabledState_) {
+            glDisable(GL_SCISSOR_TEST);
+            scissorEnabledState_ = false;
+            stateCacheValid_ = true;
+        }
         return;
     }
 
@@ -219,8 +313,26 @@ void OpenGLRenderBackend::setScissor(bool enabled, const core::Rect& rect, int f
     const GLint y = static_cast<GLint>(std::floor(static_cast<float>(framebufferHeight) - rect.y - rect.height));
     const GLsizei width = static_cast<GLsizei>(std::ceil(rect.width));
     const GLsizei height = static_cast<GLsizei>(std::ceil(rect.height));
-    glEnable(GL_SCISSOR_TEST);
-    glScissor(x, std::max<GLint>(0, y), std::max<GLsizei>(1, width), std::max<GLsizei>(1, height));
+    const GLint safeY = std::max<GLint>(0, y);
+    const GLsizei safeWidth = std::max<GLsizei>(1, width);
+    const GLsizei safeHeight = std::max<GLsizei>(1, height);
+    if (!stateCacheValid_ || !scissorEnabledState_) {
+        glEnable(GL_SCISSOR_TEST);
+        scissorEnabledState_ = true;
+        stateCacheValid_ = true;
+    }
+    if (!stateCacheValid_ ||
+        scissorX_ != x ||
+        scissorY_ != safeY ||
+        scissorWidth_ != safeWidth ||
+        scissorHeight_ != safeHeight) {
+        glScissor(x, safeY, safeWidth, safeHeight);
+        scissorX_ = x;
+        scissorY_ = safeY;
+        scissorWidth_ = safeWidth;
+        scissorHeight_ = safeHeight;
+        stateCacheValid_ = true;
+    }
 }
 
 } // namespace core::render::opengl

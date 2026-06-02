@@ -47,6 +47,14 @@ private:
     bool ensureImageResources();
     unsigned int compileImageShader(unsigned int type, const char* source) const;
     void releaseImageResources();
+    void resetStateCache();
+    void useProgram(unsigned int program);
+    void bindVertexArray(unsigned int vao);
+    void bindArrayBuffer(unsigned int buffer);
+    void activeTextureUnit(unsigned int unit);
+    void bindTexture2D(unsigned int texture);
+    void setBlendEnabled(bool enabled);
+    void setStandardAlphaBlend();
 
     core::window::Handle window_ = nullptr;
     RenderBackend* shareContext_ = nullptr;
@@ -65,6 +73,19 @@ private:
     int imageTintLocation_ = -1;
     int imageRectLocation_ = -1;
     int imageRadiusLocation_ = -1;
+    bool stateCacheValid_ = false;
+    bool blendEnabled_ = false;
+    bool alphaBlendSet_ = false;
+    bool scissorEnabledState_ = false;
+    int scissorX_ = 0;
+    int scissorY_ = 0;
+    int scissorWidth_ = 0;
+    int scissorHeight_ = 0;
+    unsigned int currentProgram_ = 0;
+    unsigned int currentVao_ = 0;
+    unsigned int currentArrayBuffer_ = 0;
+    unsigned int currentTextureUnit_ = 0;
+    unsigned int currentTexture2D_[8] = {};
 };
 
 } // namespace core::render::opengl

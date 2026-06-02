@@ -193,6 +193,27 @@ void OpenGLRenderBackend::drawText(const TextDrawCommand& command, int windowWid
     }
 
     TextRenderResources& resources = textResources();
+    const bool hadResources = resources.shaderProgram != 0 && resources.vao != 0 && resources.vbo != 0;
+    const bool grayAtlasUpload =
+        command.grayAtlas.pixels != nullptr &&
+        command.grayAtlas.width > 0 &&
+        command.grayAtlas.height > 0 &&
+        command.grayAtlas.channels > 0 &&
+        (resources.gray.texture == 0 ||
+         resources.gray.width != command.grayAtlas.width ||
+         resources.gray.height != command.grayAtlas.height ||
+         resources.gray.channels != command.grayAtlas.channels ||
+         resources.gray.generation != command.grayAtlas.generation);
+    const bool colorAtlasUpload =
+        command.colorAtlas.pixels != nullptr &&
+        command.colorAtlas.width > 0 &&
+        command.colorAtlas.height > 0 &&
+        command.colorAtlas.channels > 0 &&
+        (resources.color.texture == 0 ||
+         resources.color.width != command.colorAtlas.width ||
+         resources.color.height != command.colorAtlas.height ||
+         resources.color.channels != command.colorAtlas.channels ||
+         resources.color.generation != command.colorAtlas.generation);
     if (!ensureTextRenderResources(resources) ||
         !ensureAtlasTexture(resources.gray, command.grayAtlas)) {
         return;
@@ -200,40 +221,31 @@ void OpenGLRenderBackend::drawText(const TextDrawCommand& command, int windowWid
     if (command.colorAtlas.pixels != nullptr && command.colorAtlas.width > 0 && command.colorAtlas.height > 0) {
         ensureAtlasTexture(resources.color, command.colorAtlas);
     }
+    if (!hadResources || grayAtlasUpload || colorAtlasUpload) {
+        resetStateCache();
+    }
 
-    const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    setStandardAlphaBlend();
 
-    glUseProgram(resources.shaderProgram);
+    useProgram(resources.shaderProgram);
     glUniform2f(resources.windowSizeLocation, static_cast<float>(windowWidth), static_cast<float>(windowHeight));
     glUniform4f(resources.colorLocation, command.color.r, command.color.g, command.color.b, command.color.a);
     glUniform1i(resources.grayTextureLocation, 0);
     glUniform1i(resources.colorTextureLocation, 1);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, resources.gray.texture);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, resources.color.texture != 0 ? resources.color.texture : resources.gray.texture);
-    glActiveTexture(GL_TEXTURE0);
+    activeTextureUnit(0);
+    bindTexture2D(resources.gray.texture);
+    activeTextureUnit(1);
+    bindTexture2D(resources.color.texture != 0 ? resources.color.texture : resources.gray.texture);
+    activeTextureUnit(0);
 
-    glBindVertexArray(resources.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, resources.vbo);
+    bindVertexArray(resources.vao);
+    bindArrayBuffer(resources.vbo);
     glBufferData(GL_ARRAY_BUFFER,
                  static_cast<GLsizeiptr>(command.vertexFloatCount * sizeof(float)),
                  command.vertices,
                  GL_DYNAMIC_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(command.vertexFloatCount / 5));
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glActiveTexture(GL_TEXTURE0);
-
-    if (!blendEnabled) {
-        glDisable(GL_BLEND);
-    }
 }
 
 } // namespace core::render::opengl

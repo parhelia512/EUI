@@ -48,6 +48,7 @@ OpenGLRenderBackend::TextureHandle OpenGLRenderBackend::createTexture(const unsi
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     glBindTexture(GL_TEXTURE_2D, 0);
+    resetStateCache();
     return resource;
 }
 
@@ -67,6 +68,7 @@ bool OpenGLRenderBackend::updateTexture(TextureHandle handle, const unsigned cha
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     }
     glBindTexture(GL_TEXTURE_2D, 0);
+    resetStateCache();
     return true;
 }
 
@@ -80,6 +82,7 @@ void OpenGLRenderBackend::destroyTexture(TextureHandle handle) {
         resource->texture = 0;
     }
     delete resource;
+    resetStateCache();
 }
 
 void OpenGLRenderBackend::drawTexture(TextureHandle handle,
@@ -99,11 +102,9 @@ void OpenGLRenderBackend::drawTexture(TextureHandle handle,
         return;
     }
 
-    const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    setStandardAlphaBlend();
 
-    glUseProgram(imageShaderProgram_);
+    useProgram(imageShaderProgram_);
     glUniform2f(imageWindowSizeLocation_, static_cast<float>(std::max(1, windowWidth)),
                 static_cast<float>(std::max(1, windowHeight)));
     glUniform4f(imageTintLocation_, tint.r, tint.g, tint.b, tint.a);
@@ -111,19 +112,12 @@ void OpenGLRenderBackend::drawTexture(TextureHandle handle,
     glUniform1f(imageRadiusLocation_, radius);
     glUniform1i(imageTextureLocation_, 0);
 
-    glBindVertexArray(imageVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, imageVbo_);
+    bindVertexArray(imageVao_);
+    bindArrayBuffer(imageVbo_);
     glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(vertexFloatCount * sizeof(float)), vertices);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
+    activeTextureUnit(0);
+    bindTexture2D(texture);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexFloatCount / 7));
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    if (!blendEnabled) {
-        glDisable(GL_BLEND);
-    }
 }
 
 bool OpenGLRenderBackend::ensureImageResources() {
@@ -215,6 +209,7 @@ bool OpenGLRenderBackend::ensureImageResources() {
     glEnableVertexAttribArray(2);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
+    resetStateCache();
 
     return imageShaderProgram_ != 0 && imageVao_ != 0 && imageVbo_ != 0;
 }
@@ -251,6 +246,7 @@ void OpenGLRenderBackend::releaseImageResources() {
     imageTintLocation_ = -1;
     imageRectLocation_ = -1;
     imageRadiusLocation_ = -1;
+    resetStateCache();
 }
 
 } // namespace core::render::opengl

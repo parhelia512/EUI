@@ -320,20 +320,26 @@ void OpenGLRenderBackend::prepareBackdropBlur(const core::Rect& bounds, float bl
     glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFramebuffer));
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+    resetStateCache();
 }
 
 void OpenGLRenderBackend::drawRoundedRect(const RoundedRectDrawCommand& command, int windowWidth, int windowHeight) {
     if (command.vertices.empty() || windowWidth <= 0 || windowHeight <= 0 ||
-        !roundedRectHasVisibleContent(command) || !ensurePrimitiveResources()) {
+        !roundedRectHasVisibleContent(command)) {
         return;
     }
 
     PrimitiveResources& resources = primitiveResources();
-    const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    const bool hadResources = resources.shaderProgram != 0 && resources.vao != 0 && resources.vbo != 0;
+    if (!ensurePrimitiveResources()) {
+        return;
+    }
+    if (!hadResources) {
+        resetStateCache();
+    }
+    setStandardAlphaBlend();
 
-    glUseProgram(resources.shaderProgram);
+    useProgram(resources.shaderProgram);
     glUniform2f(resources.windowSizeLocation, static_cast<float>(windowWidth), static_cast<float>(windowHeight));
     glUniform4f(resources.fillColorLocation, command.fillColor.r, command.fillColor.g, command.fillColor.b, command.fillColor.a);
     glUniform4f(resources.gradientStartLocation, command.gradient.start.r, command.gradient.start.g, command.gradient.start.b, command.gradient.start.a);
@@ -358,27 +364,22 @@ void OpenGLRenderBackend::drawRoundedRect(const RoundedRectDrawCommand& command,
 
     if (resources.backdropTexture == 0) {
         ensureBackdropTexture(1, 1);
+        resetStateCache();
     }
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, resources.backdropTexture);
-    glBindVertexArray(resources.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, resources.vbo);
+    activeTextureUnit(0);
+    bindTexture2D(resources.backdropTexture);
+    bindVertexArray(resources.vao);
+    bindArrayBuffer(resources.vbo);
     glBufferData(GL_ARRAY_BUFFER,
                  static_cast<GLsizeiptr>(command.vertices.size() * sizeof(PrimitiveGeometryVertex)),
                  command.vertices.data(),
                  GL_DYNAMIC_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(command.vertices.size()));
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    if (!blendEnabled) {
-        glDisable(GL_BLEND);
-    }
 }
 
 void OpenGLRenderBackend::releasePrimitiveResources() {
     releaseResources(primitiveResources());
+    resetStateCache();
 }
 
 } // namespace core::render::opengl
