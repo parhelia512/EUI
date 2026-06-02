@@ -111,47 +111,19 @@ bool VulkanRenderBackend::updateTexture(TextureHandle handle, const unsigned cha
 
     const VkDeviceSize uploadSize = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4u;
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = uploadSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (vkCreateBuffer(device_, &bufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
-        return false;
-    }
-
-    VkMemoryRequirements memoryRequirements{};
-    vkGetBufferMemoryRequirements(device_, stagingBuffer, &memoryRequirements);
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memoryRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits,
-                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (allocInfo.memoryTypeIndex == std::numeric_limits<std::uint32_t>::max() ||
-        vkAllocateMemory(device_, &allocInfo, nullptr, &stagingMemory) != VK_SUCCESS ||
-        vkBindBufferMemory(device_, stagingBuffer, stagingMemory, 0) != VK_SUCCESS) {
-        if (stagingMemory != VK_NULL_HANDLE) {
-            vkFreeMemory(device_, stagingMemory, nullptr);
-        }
-        vkDestroyBuffer(device_, stagingBuffer, nullptr);
-        return false;
-    }
-
+    VkDeviceSize stagingOffset = 0;
     void* mapped = nullptr;
-    if (vkMapMemory(device_, stagingMemory, 0, uploadSize, 0, &mapped) != VK_SUCCESS) {
-        vkFreeMemory(device_, stagingMemory, nullptr);
-        vkDestroyBuffer(device_, stagingBuffer, nullptr);
+    if (!allocateUploadRegion(uploadSize, stagingBuffer, stagingOffset, mapped)) {
         return false;
     }
     std::memcpy(mapped, pixels, static_cast<std::size_t>(uploadSize));
-    vkUnmapMemory(device_, stagingMemory);
 
     VkCommandBuffer commandBuffer = commandBuffers_[currentImage_];
     transitionImageLayout(commandBuffer, texture->image, texture->layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     texture->layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
     VkBufferImageCopy copyRegion{};
+    copyRegion.bufferOffset = stagingOffset;
     copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copyRegion.imageSubresource.layerCount = 1;
     copyRegion.imageExtent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1};
@@ -160,8 +132,6 @@ bool VulkanRenderBackend::updateTexture(TextureHandle handle, const unsigned cha
     transitionImageLayout(commandBuffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     texture->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     ++texture->generation;
-    pendingUploadBuffers_.push_back(stagingBuffer);
-    pendingUploadMemories_.push_back(stagingMemory);
     beginLoadPass();
     return true;
 }
@@ -420,20 +390,30 @@ bool VulkanRenderBackend::ensureImageDescriptor(TextureResource& texture) {
     if (imageDescriptorSetLayout_ == VK_NULL_HANDLE || texture.view == VK_NULL_HANDLE || texture.sampler == VK_NULL_HANDLE) {
         return false;
     }
-    if (imageDescriptorPool_ == VK_NULL_HANDLE) {
+    if (imageDescriptorPool_ == VK_NULL_HANDLE || imageDescriptorPoolUsed_ >= imageDescriptorPoolCapacity_) {
+        constexpr std::uint32_t kInitialImageDescriptorPoolSize = 16;
+        const std::uint32_t nextCapacity = imageDescriptorPoolCapacity_ == 0
+            ? kInitialImageDescriptorPoolSize
+            : imageDescriptorPoolCapacity_ * 2;
+
         VkDescriptorPoolSize poolSize{};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = 256;
+        poolSize.descriptorCount = nextCapacity;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        poolInfo.maxSets = 256;
+        poolInfo.maxSets = nextCapacity;
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = &poolSize;
-        if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &imageDescriptorPool_) != VK_SUCCESS) {
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
             return false;
         }
+        imageDescriptorPools_.push_back(pool);
+        imageDescriptorPool_ = pool;
+        imageDescriptorPoolUsed_ = 0;
+        imageDescriptorPoolCapacity_ = nextCapacity;
     }
     if (texture.descriptorSet == VK_NULL_HANDLE) {
         VkDescriptorSetAllocateInfo allocInfo{};
@@ -444,6 +424,8 @@ bool VulkanRenderBackend::ensureImageDescriptor(TextureResource& texture) {
         if (vkAllocateDescriptorSets(device_, &allocInfo, &texture.descriptorSet) != VK_SUCCESS) {
             return false;
         }
+        texture.descriptorPool = imageDescriptorPool_;
+        ++imageDescriptorPoolUsed_;
     }
 
     VkDescriptorImageInfo imageInfo{};

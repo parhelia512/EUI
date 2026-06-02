@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cmath>
 #include <limits>
 
 namespace core::render::vulkan {
@@ -28,7 +29,7 @@ static_assert(sizeof(RoundedRectPushConstants) == 128, "Rounded rect push consta
 
 } // namespace
 
-void VulkanRenderBackend::prepareBackdropBlur(const core::Rect&, float blur, int windowWidth, int windowHeight) {
+void VulkanRenderBackend::prepareBackdropBlur(const core::Rect& bounds, float blur, int windowWidth, int windowHeight) {
     const bool sourceIsCache = renderingToCache_;
     if (!frameActive_ || blur <= 0.0f || windowWidth <= 0 || windowHeight <= 0 ||
         (!sourceIsCache && !swapchainTransferSrcSupported_) ||
@@ -40,7 +41,19 @@ void VulkanRenderBackend::prepareBackdropBlur(const core::Rect&, float blur, int
         return;
     }
 
-    if (!ensureRoundedRectPipeline() || !ensureBackdropResources(swapchainExtent_.width, swapchainExtent_.height)) {
+    const VkExtent2D sourceExtent = sourceIsCache ? renderCacheExtent_ : swapchainExtent_;
+    const float sourceWidth = static_cast<float>(std::max(1u, sourceExtent.width));
+    const float sourceHeight = static_cast<float>(std::max(1u, sourceExtent.height));
+    const float leftF = std::clamp(std::floor(bounds.x - blur), 0.0f, std::max(sourceWidth - 1.0f, 0.0f));
+    const float topF = std::clamp(std::floor(bounds.y - blur), 0.0f, std::max(sourceHeight - 1.0f, 0.0f));
+    const float rightF = std::clamp(std::ceil(bounds.x + bounds.width + blur), leftF + 1.0f, sourceWidth);
+    const float bottomF = std::clamp(std::ceil(bounds.y + bounds.height + blur), topF + 1.0f, sourceHeight);
+    const auto left = static_cast<std::int32_t>(leftF);
+    const auto top = static_cast<std::int32_t>(topF);
+    const auto captureWidth = static_cast<std::uint32_t>(std::max(1.0f, rightF - leftF));
+    const auto captureHeight = static_cast<std::uint32_t>(std::max(1.0f, bottomF - topF));
+
+    if (!ensureRoundedRectPipeline() || !ensureBackdropResources(captureWidth, captureHeight)) {
         backdropReady_ = false;
         return;
     }
@@ -61,13 +74,13 @@ void VulkanRenderBackend::prepareBackdropBlur(const core::Rect&, float blur, int
     transitionImageLayout(commandBuffer, backdropImage_, backdropImageLayout_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     backdropImageLayout_ = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
-    const VkExtent2D sourceExtent = sourceIsCache ? renderCacheExtent_ : swapchainExtent_;
     VkImageCopy copyRegion{};
+    copyRegion.srcOffset = {left, top, 0};
     copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copyRegion.srcSubresource.layerCount = 1;
     copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copyRegion.dstSubresource.layerCount = 1;
-    copyRegion.extent = {sourceExtent.width, sourceExtent.height, 1};
+    copyRegion.extent = {captureWidth, captureHeight, 1};
     vkCmdCopyImage(commandBuffer,
                    sourceIsCache ? renderCacheImage_ : swapchainImages_[currentImage_],
                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -92,8 +105,8 @@ void VulkanRenderBackend::drawRoundedRect(const RoundedRectDrawCommand& command,
         return;
     }
     const bool needsBackdrop = !command.shadowPass && command.backdropBlur > 0.001f;
-    const std::uint32_t backdropWidth = needsBackdrop ? swapchainExtent_.width : 1u;
-    const std::uint32_t backdropHeight = needsBackdrop ? swapchainExtent_.height : 1u;
+    const std::uint32_t backdropWidth = needsBackdrop && backdropReady_ ? std::max(1u, backdropExtent_.width) : 1u;
+    const std::uint32_t backdropHeight = needsBackdrop && backdropReady_ ? std::max(1u, backdropExtent_.height) : 1u;
     if (!ensureRoundedRectPipeline() || !ensureBackdropResources(backdropWidth, backdropHeight)) {
         return;
     }

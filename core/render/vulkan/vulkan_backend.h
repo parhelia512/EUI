@@ -54,6 +54,7 @@ private:
         VkImageView view = VK_NULL_HANDLE;
         VkSampler sampler = VK_NULL_HANDLE;
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+        VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
         int width = 0;
         int height = 0;
@@ -99,6 +100,9 @@ private:
     bool ensureImagePipeline();
     bool ensureImageDescriptor(TextureResource& texture);
     bool ensureImageVertexBuffer();
+    bool allocateUploadRegion(VkDeviceSize size, VkBuffer& buffer, VkDeviceSize& offset, void*& mapped);
+    bool createUploadBuffer(VkDeviceSize capacity);
+    void destroyUploadBuffer();
     void destroyRoundedRectPipeline();
     void destroyBackdropResources();
     void destroyBackdropDescriptorPool();
@@ -195,6 +199,9 @@ private:
     std::size_t textVertexUsed_ = 0;
     VkDescriptorSetLayout imageDescriptorSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool imageDescriptorPool_ = VK_NULL_HANDLE;
+    std::vector<VkDescriptorPool> imageDescriptorPools_;
+    std::uint32_t imageDescriptorPoolUsed_ = 0;
+    std::uint32_t imageDescriptorPoolCapacity_ = 0;
     VkPipelineLayout imagePipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline imagePipeline_ = VK_NULL_HANDLE;
     VkBuffer imageVertexBuffer_ = VK_NULL_HANDLE;
@@ -202,6 +209,11 @@ private:
     void* imageVertexMapped_ = nullptr;
     std::size_t imageVertexCapacity_ = 0;
     std::size_t imageVertexUsed_ = 0;
+    VkBuffer uploadBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory uploadMemory_ = VK_NULL_HANDLE;
+    void* uploadMapped_ = nullptr;
+    VkDeviceSize uploadCapacity_ = 0;
+    VkDeviceSize uploadUsed_ = 0;
     std::vector<VkBuffer> pendingUploadBuffers_;
     std::vector<VkDeviceMemory> pendingUploadMemories_;
     std::vector<TextureResource*> pendingTextureDeletes_;

@@ -357,48 +357,19 @@ bool VulkanRenderBackend::ensureTextAtlas(const TextAtlasPageData& page) {
                                     static_cast<VkDeviceSize>(page.height) *
                                     static_cast<VkDeviceSize>(page.channels);
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
-
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = uploadSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (vkCreateBuffer(device_, &bufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
-        return false;
-    }
-
-    VkMemoryRequirements memoryRequirements{};
-    vkGetBufferMemoryRequirements(device_, stagingBuffer, &memoryRequirements);
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memoryRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits,
-                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (allocInfo.memoryTypeIndex == std::numeric_limits<std::uint32_t>::max() ||
-        vkAllocateMemory(device_, &allocInfo, nullptr, &stagingMemory) != VK_SUCCESS ||
-        vkBindBufferMemory(device_, stagingBuffer, stagingMemory, 0) != VK_SUCCESS) {
-        if (stagingMemory != VK_NULL_HANDLE) {
-            vkFreeMemory(device_, stagingMemory, nullptr);
-        }
-        vkDestroyBuffer(device_, stagingBuffer, nullptr);
-        return false;
-    }
-
+    VkDeviceSize stagingOffset = 0;
     void* mapped = nullptr;
-    if (vkMapMemory(device_, stagingMemory, 0, uploadSize, 0, &mapped) != VK_SUCCESS) {
-        vkFreeMemory(device_, stagingMemory, nullptr);
-        vkDestroyBuffer(device_, stagingBuffer, nullptr);
+    if (!allocateUploadRegion(uploadSize, stagingBuffer, stagingOffset, mapped)) {
         return false;
     }
     std::memcpy(mapped, page.pixels, static_cast<std::size_t>(uploadSize));
-    vkUnmapMemory(device_, stagingMemory);
 
     VkCommandBuffer commandBuffer = commandBuffers_[currentImage_];
     transitionImageLayout(commandBuffer, texture.image, texture.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     texture.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
     VkBufferImageCopy copyRegion{};
+    copyRegion.bufferOffset = stagingOffset;
     copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copyRegion.imageSubresource.layerCount = 1;
     copyRegion.imageExtent = {static_cast<std::uint32_t>(page.width), static_cast<std::uint32_t>(page.height), 1};
@@ -408,9 +379,6 @@ bool VulkanRenderBackend::ensureTextAtlas(const TextAtlasPageData& page) {
     texture.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     texture.generation = page.generation;
     textDescriptorDirty_ = true;
-
-    pendingUploadBuffers_.push_back(stagingBuffer);
-    pendingUploadMemories_.push_back(stagingMemory);
     return true;
 }
 

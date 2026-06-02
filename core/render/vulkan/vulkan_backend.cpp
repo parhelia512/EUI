@@ -231,7 +231,7 @@ void VulkanRenderBackend::makeCurrent() {
     if (device_ == VK_NULL_HANDLE || frameActive_ || inFlight_ == VK_NULL_HANDLE) {
         return;
     }
-    if (pendingUploadBuffers_.empty() && pendingTextureDeletes_.empty()) {
+    if (pendingUploadBuffers_.empty() && pendingTextureDeletes_.empty() && uploadBuffer_ == VK_NULL_HANDLE) {
         return;
     }
     if (vkGetFenceStatus(device_, inFlight_) == VK_SUCCESS) {
@@ -791,15 +791,21 @@ void VulkanRenderBackend::destroy() {
     }
     destroySwapchain();
     destroyPrimitiveVertexBuffer();
-    if (imageDescriptorPool_ != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device_, imageDescriptorPool_, nullptr);
-        imageDescriptorPool_ = VK_NULL_HANDLE;
+    for (VkDescriptorPool pool : imageDescriptorPools_) {
+        if (pool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device_, pool, nullptr);
+        }
     }
+    imageDescriptorPools_.clear();
+    imageDescriptorPool_ = VK_NULL_HANDLE;
+    imageDescriptorPoolUsed_ = 0;
+    imageDescriptorPoolCapacity_ = 0;
     if (imageDescriptorSetLayout_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(device_, imageDescriptorSetLayout_, nullptr);
         imageDescriptorSetLayout_ = VK_NULL_HANDLE;
     }
     releasePendingUploads();
+    destroyUploadBuffer();
     if (device_ != VK_NULL_HANDLE) {
         vkDestroyDevice(device_, nullptr);
         device_ = VK_NULL_HANDLE;
@@ -820,9 +826,10 @@ void VulkanRenderBackend::destroyTextureResource(TextureResource& texture) {
         texture = {};
         return;
     }
-    if (imageDescriptorPool_ != VK_NULL_HANDLE && texture.descriptorSet != VK_NULL_HANDLE) {
-        vkFreeDescriptorSets(device_, imageDescriptorPool_, 1, &texture.descriptorSet);
+    if (texture.descriptorPool != VK_NULL_HANDLE && texture.descriptorSet != VK_NULL_HANDLE) {
+        vkFreeDescriptorSets(device_, texture.descriptorPool, 1, &texture.descriptorSet);
         texture.descriptorSet = VK_NULL_HANDLE;
+        texture.descriptorPool = VK_NULL_HANDLE;
     }
     if (texture.sampler != VK_NULL_HANDLE) {
         vkDestroySampler(device_, texture.sampler, nullptr);
@@ -841,6 +848,109 @@ void VulkanRenderBackend::destroyTextureResource(TextureResource& texture) {
         texture.memory = VK_NULL_HANDLE;
     }
     texture = {};
+}
+
+bool VulkanRenderBackend::createUploadBuffer(VkDeviceSize capacity) {
+    if (device_ == VK_NULL_HANDLE || capacity == 0) {
+        return false;
+    }
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = capacity;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vkCreateBuffer(device_, &bufferInfo, nullptr, &uploadBuffer_) != VK_SUCCESS) {
+        return false;
+    }
+
+    VkMemoryRequirements memoryRequirements{};
+    vkGetBufferMemoryRequirements(device_, uploadBuffer_, &memoryRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memoryRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits,
+                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (allocInfo.memoryTypeIndex == std::numeric_limits<std::uint32_t>::max() ||
+        vkAllocateMemory(device_, &allocInfo, nullptr, &uploadMemory_) != VK_SUCCESS ||
+        vkBindBufferMemory(device_, uploadBuffer_, uploadMemory_, 0) != VK_SUCCESS ||
+        vkMapMemory(device_, uploadMemory_, 0, capacity, 0, &uploadMapped_) != VK_SUCCESS) {
+        destroyUploadBuffer();
+        return false;
+    }
+
+    uploadCapacity_ = capacity;
+    uploadUsed_ = 0;
+    return true;
+}
+
+bool VulkanRenderBackend::allocateUploadRegion(VkDeviceSize size, VkBuffer& buffer, VkDeviceSize& offset, void*& mapped) {
+    if (device_ == VK_NULL_HANDLE || size == 0) {
+        return false;
+    }
+
+    constexpr VkDeviceSize kUploadAlignment = 256;
+    constexpr VkDeviceSize kInitialUploadCapacity = 1ull * 1024ull * 1024ull;
+    const auto alignUp = [](VkDeviceSize value, VkDeviceSize alignment) {
+        return (value + alignment - 1) & ~(alignment - 1);
+    };
+
+    VkDeviceSize alignedUsed = alignUp(uploadUsed_, kUploadAlignment);
+    if (uploadBuffer_ == VK_NULL_HANDLE || alignedUsed + size > uploadCapacity_) {
+        if (uploadBuffer_ != VK_NULL_HANDLE) {
+            if (uploadMapped_ != nullptr) {
+                vkUnmapMemory(device_, uploadMemory_);
+                uploadMapped_ = nullptr;
+            }
+            pendingUploadBuffers_.push_back(uploadBuffer_);
+            pendingUploadMemories_.push_back(uploadMemory_);
+            uploadBuffer_ = VK_NULL_HANDLE;
+            uploadMemory_ = VK_NULL_HANDLE;
+            uploadCapacity_ = 0;
+            uploadUsed_ = 0;
+        }
+
+        VkDeviceSize capacity = kInitialUploadCapacity;
+        while (capacity < size) {
+            capacity *= 2;
+        }
+        if (!createUploadBuffer(capacity)) {
+            return false;
+        }
+        alignedUsed = 0;
+    }
+
+    buffer = uploadBuffer_;
+    offset = alignedUsed;
+    mapped = static_cast<unsigned char*>(uploadMapped_) + static_cast<std::size_t>(offset);
+    uploadUsed_ = alignedUsed + size;
+    return mapped != nullptr;
+}
+
+void VulkanRenderBackend::destroyUploadBuffer() {
+    if (device_ == VK_NULL_HANDLE) {
+        uploadBuffer_ = VK_NULL_HANDLE;
+        uploadMemory_ = VK_NULL_HANDLE;
+        uploadMapped_ = nullptr;
+        uploadCapacity_ = 0;
+        uploadUsed_ = 0;
+        return;
+    }
+    if (uploadMemory_ != VK_NULL_HANDLE && uploadMapped_ != nullptr) {
+        vkUnmapMemory(device_, uploadMemory_);
+        uploadMapped_ = nullptr;
+    }
+    if (uploadBuffer_ != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, uploadBuffer_, nullptr);
+        uploadBuffer_ = VK_NULL_HANDLE;
+    }
+    if (uploadMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, uploadMemory_, nullptr);
+        uploadMemory_ = VK_NULL_HANDLE;
+    }
+    uploadCapacity_ = 0;
+    uploadUsed_ = 0;
 }
 
 void VulkanRenderBackend::releasePendingTextureDeletes() {
@@ -878,6 +988,8 @@ void VulkanRenderBackend::releasePendingUploads() {
     }
     pendingUploadBuffers_.clear();
     pendingUploadMemories_.clear();
+    uploadUsed_ = 0;
+    destroyUploadBuffer();
 }
 
 void VulkanRenderBackend::transitionSwapchainImage(VkImageLayout newLayout) {

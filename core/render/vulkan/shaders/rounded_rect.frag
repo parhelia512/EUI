@@ -36,9 +36,7 @@ vec4 backdropRect(float blurRadiusPx) {
 
 vec3 sampleBackdrop(vec2 captureUv, vec4 captureRect) {
     vec2 clampedUv = clamp(captureUv, vec2(0.0), vec2(1.0));
-    vec2 windowSize = max(pc.windowAndShape.xy, vec2(1.0));
-    vec2 screenUv = (captureRect.xy + clampedUv * captureRect.zw) / windowSize;
-    return texture(uBackdrop, clamp(screenUv, vec2(0.0), vec2(1.0))).rgb;
+    return texture(uBackdrop, clampedUv).rgb;
 }
 
 vec3 backdropBlur(vec2 uv, vec4 captureRect) {
