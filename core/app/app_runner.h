@@ -106,7 +106,7 @@ struct AppRunner {
 
     template <typename SetTitleFn>
     void updateFrameTitle(double now, SetTitleFn&& setTitle) {
-        if (!showFrameCountInTitle()) {
+        if (!showDebugStatsInTitle()) {
             return;
         }
         const double elapsed = now - lastTitleUpdate;

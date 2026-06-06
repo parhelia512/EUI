@@ -15,9 +15,9 @@ struct DslAppConfig {
     int windowWidthValue = 800;
     int windowHeightValue = 600;
 #ifndef NDEBUG
-    bool showFrameCountInTitleValue = true;
+    bool showDebugStatsInTitleValue = true;
 #else
-    bool showFrameCountInTitleValue = false;
+    bool showDebugStatsInTitleValue = false;
 #endif
     double fpsValue = 90.0;
     const char* iconPathValue = "assets/icon.png";
@@ -38,12 +38,8 @@ struct DslAppConfig {
     }
     DslAppConfig& windowWidth(int value) { windowWidthValue = value; return *this; }
     DslAppConfig& windowHeight(int value) { windowHeightValue = value; return *this; }
-    DslAppConfig& showFrameCountInTitle(bool value = true) {
-        showFrameCountInTitleValue = value;
-        return *this;
-    }
     DslAppConfig& showDebugStatsInTitle(bool value = true) {
-        showFrameCountInTitleValue = value;
+        showDebugStatsInTitleValue = value;
         return *this;
     }
     DslAppConfig& fps(double value) { fpsValue = value; return *this; }
