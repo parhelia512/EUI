@@ -196,6 +196,10 @@ struct Element {
     std::string dirtyKey;
 
     std::vector<std::unique_ptr<Element>> children;
+    std::vector<const Element*> orderedChildren;
+    bool subtreeNeedsUpdate = true;
+    bool subtreeHasDependentVisuals = false;
+    bool subtreeHasBackdropBlur = false;
 
     LayoutType layoutType() const {
         if (kind == ElementKind::Row) {
@@ -1247,6 +1251,9 @@ public:
     void begin(const std::string& pageId = "") {
         pageId_ = pageId;
         roots_.clear();
+        orderedRoots_.clear();
+        hasDependentVisuals_ = false;
+        hasBackdropBlur_ = false;
         stack_.clear();
         scopeStack_.clear();
         index_.clear();
@@ -1307,6 +1314,7 @@ public:
                 link.first->frame = link.second->frame();
             }
         }
+        rebuildOrderedElements();
     }
 
     void layout(const Screen& screen) {
@@ -1325,6 +1333,18 @@ public:
 
     const std::vector<std::unique_ptr<Element>>& roots() const {
         return roots_;
+    }
+
+    const std::vector<const Element*>& orderedRoots() const {
+        return orderedRoots_;
+    }
+
+    bool hasDependentVisuals() const {
+        return hasDependentVisuals_;
+    }
+
+    bool hasBackdropBlur() const {
+        return hasBackdropBlur_;
     }
 
     bool isFocused(const std::string& id) const {
@@ -1493,9 +1513,92 @@ private:
         return node;
     }
 
+    void rebuildOrderedElements() {
+        orderedRoots_.clear();
+        orderedRoots_.reserve(roots_.size());
+        hasDependentVisuals_ = false;
+        hasBackdropBlur_ = false;
+        for (const auto& root : roots_) {
+            orderedRoots_.push_back(root.get());
+            rebuildOrderedChildren(*root);
+            hasDependentVisuals_ = hasDependentVisuals_ || root->subtreeHasDependentVisuals;
+            hasBackdropBlur_ = hasBackdropBlur_ || root->subtreeHasBackdropBlur;
+        }
+        std::stable_sort(orderedRoots_.begin(), orderedRoots_.end(), [](const Element* a, const Element* b) {
+            return a->zIndex < b->zIndex;
+        });
+    }
+
+    static void rebuildOrderedChildren(Element& element) {
+        element.orderedChildren.clear();
+        element.orderedChildren.reserve(element.children.size());
+        element.subtreeNeedsUpdate = elementNeedsUpdate(element);
+        element.subtreeHasDependentVisuals = elementHasDependentVisuals(element);
+        element.subtreeHasBackdropBlur = elementHasBackdropBlur(element);
+        for (const auto& child : element.children) {
+            element.orderedChildren.push_back(child.get());
+            rebuildOrderedChildren(*child);
+            element.subtreeNeedsUpdate = element.subtreeNeedsUpdate || child->subtreeNeedsUpdate;
+            element.subtreeHasDependentVisuals = element.subtreeHasDependentVisuals || child->subtreeHasDependentVisuals;
+            element.subtreeHasBackdropBlur = element.subtreeHasBackdropBlur || child->subtreeHasBackdropBlur;
+        }
+        std::stable_sort(element.orderedChildren.begin(), element.orderedChildren.end(), [](const Element* a, const Element* b) {
+            return a->zIndex < b->zIndex;
+        });
+    }
+
+    static bool elementNeedsUpdate(const Element& element) {
+        return element.interactive ||
+               element.focusable ||
+               element.disabled ||
+               element.hasImeRect ||
+               element.onClick ||
+               element.onPress ||
+               element.onRelease ||
+               element.onMove ||
+               element.onContextMenu ||
+               element.onHoverChanged ||
+               element.onFocusChanged ||
+               element.onTextInput ||
+               element.onScroll ||
+               element.onScrollOffsetChanged ||
+               element.onDrag ||
+               element.onTimer ||
+               element.onFrame ||
+               element.timerSeconds > 0.0f ||
+               element.transition.enabled ||
+               !element.visualStateSourceId.empty() ||
+               !element.hoverOpacitySourceId.empty() ||
+               !element.pointerRuntimeSourceId.empty() ||
+               !element.scrollStateId.empty() ||
+               !element.scrollContentSourceId.empty() ||
+               !element.scrollDragSourceId.empty() ||
+               !element.scrollThumbSourceId.empty() ||
+               !element.sliderStateId.empty() ||
+               !element.sliderInputSourceId.empty() ||
+               !element.sliderFillSourceId.empty() ||
+               !element.sliderKnobSourceId.empty() ||
+               !element.dirtyKey.empty() ||
+               (element.kind == ElementKind::Image && !element.imageSource.empty()) ||
+               element.kind == ElementKind::Svg;
+    }
+
+    static bool elementHasDependentVisuals(const Element& element) {
+        return !element.visualStateSourceId.empty() || !element.hoverOpacitySourceId.empty();
+    }
+
+    static bool elementHasBackdropBlur(const Element& element) {
+        return element.kind == ElementKind::Rect &&
+               (element.blur > 0.0f ||
+                (element.transition.enabled && hasAnimProperty(element.transition.properties, AnimProperty::Blur)));
+    }
+
     std::string pageId_;
     std::vector<std::string> scopeStack_;
     std::vector<std::unique_ptr<Element>> roots_;
+    std::vector<const Element*> orderedRoots_;
+    bool hasDependentVisuals_ = false;
+    bool hasBackdropBlur_ = false;
     std::vector<Element*> stack_;
     std::unordered_map<std::string, Element*> index_;
     std::string focusedId_;

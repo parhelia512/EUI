@@ -36,12 +36,15 @@ inline void Runtime::compose(const std::string& pageId, float logicalWidth, floa
     if (elementStructure_ != previousStructure) {
         paintRequested_ = true;
         fullPaintRequested_ = true;
+        pruneInstancesRequested_ = true;
     }
 
     if (logicalWidth_ != logicalWidth || logicalHeight_ != logicalHeight) {
         paintRequested_ = true;
         fullPaintRequested_ = true;
+        pruneInstancesRequested_ = true;
     }
+    fullTreeUpdateRequested_ = true;
     logicalWidth_ = logicalWidth;
     logicalHeight_ = logicalHeight;
 }
@@ -68,7 +71,9 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
     animating_ = false;
     composeRequested_ = false;
     wantsHandCursor_ = false;
-    markInstancesUnseen();
+    if (pruneInstancesRequested_) {
+        markInstancesUnseen();
+    }
     markTimersUnseen();
     if (ImagePrimitive::consumeRemoteImageReady()) {
         fullPaintRequested_ = true;
@@ -78,14 +83,14 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
     syncScrollStateBindings();
     if (scrollEvent.active()) {
         updateScroll(scrollEvent, hitTestScrollable(event, dpiScale));
+        hoverTargetCacheValid_ = false;
     }
 
     if (event.pressedThisFrame) {
         setFocusedId(hitTestFocusable(event, dpiScale));
     }
 
-    const std::string capturedId = capturedInteractionId();
-    const std::string hoverTargetId = !capturedId.empty() ? capturedId : hitTestInteractive(event, dpiScale);
+    const std::string hoverTargetId = resolveHoverTarget(event, dpiScale, inputEnabled);
     updateElementTree(event, deltaSeconds, dpiScale, hoverTargetId);
     updateDependentVisualDirtyRegions(dpiScale);
 
@@ -97,7 +102,12 @@ inline bool Runtime::update(core::window::Handle window, float deltaSeconds, flo
     applyCursor(window);
 
     promoteBackdropBlurDirtyRegions(dpiScale);
-    releaseUnseenInstances();
+    if (pruneInstancesRequested_) {
+        releaseUnseenInstances();
+        pruneInstancesRequested_ = false;
+    }
+    fullTreeUpdateRequested_ = false;
+    previousFrameAnimating_ = animating_;
 
     const bool result = paintRequested_;
     paintRequested_ = false;
@@ -211,7 +221,7 @@ inline void Runtime::render(int windowWidth, int windowHeight, float dpiScale) {
     }
 
     const RenderTransform identity;
-    const std::vector<const Element*> roots = orderedElements(ui_.roots());
+    const std::vector<const Element*>& roots = orderedElements(ui_);
     for (const Element* root : roots) {
         prepareTextElement(*root, windowWidth, windowHeight, dpiScale, identity);
     }
@@ -236,6 +246,7 @@ inline void Runtime::shutdown(bool releaseCachedImageTextures) {
     frameTargets_.clear();
     paintBounds_.clear();
     elementStructure_.clear();
+    hoverTargetCacheValid_ = false;
     ui_.clearState();
 }
 

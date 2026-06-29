@@ -18,7 +18,7 @@ inline bool Runtime::isElementInDisabledTree(const std::string& id) const {
 
     bool disabledTree = false;
     const std::string resolvedId = ui_.resolveId(id);
-    const std::vector<const Element*> roots = orderedElements(ui_.roots());
+    const std::vector<const Element*>& roots = orderedElements(ui_);
     for (const Element* root : roots) {
         if (findElementDisabledState(*root, resolvedId, false, disabledTree)) {
             return disabledTree;
@@ -55,7 +55,7 @@ inline std::string Runtime::hitTestInteractive(const PointerEvent& event, float 
 inline std::string Runtime::hitTestFocusable(const PointerEvent& event, float dpiScale) const {
     std::string targetId;
     const RenderTransform identity;
-    const std::vector<const Element*> roots = orderedElements(ui_.roots());
+    const std::vector<const Element*>& roots = orderedElements(ui_);
     for (auto it = roots.rbegin(); it != roots.rend(); ++it) {
         if (hitTestFocusableElement(**it, event, dpiScale, identity, false, {}, false, targetId)) {
             break;
@@ -70,11 +70,52 @@ inline std::string Runtime::hitTestScrollable(const PointerEvent& event, float d
     });
 }
 
+inline std::string Runtime::resolveHoverTarget(const PointerEvent& event, float dpiScale, bool inputEnabled) {
+    const std::string capturedId = capturedInteractionId();
+    if (!capturedId.empty()) {
+        hoverTargetCacheValid_ = false;
+        return capturedId;
+    }
+
+    if (inputEnabled && canReuseHoverTarget(event, dpiScale)) {
+        return hoverTargetCacheId_;
+    }
+
+    const std::string targetId = inputEnabled ? hitTestInteractive(event, dpiScale) : std::string{};
+    hoverTargetCacheValid_ = inputEnabled;
+    hoverTargetCacheEvent_ = event;
+    hoverTargetCacheDpiScale_ = dpiScale;
+    hoverTargetCacheId_ = targetId;
+    return targetId;
+}
+
+inline bool Runtime::canReuseHoverTarget(const PointerEvent& event, float dpiScale) const {
+    if (!hoverTargetCacheValid_ ||
+        fullTreeUpdateRequested_ ||
+        pruneInstancesRequested_ ||
+        previousFrameAnimating_ ||
+        !closeEnough(hoverTargetCacheDpiScale_, dpiScale) ||
+        hoverTargetCacheEvent_.x != event.x ||
+        hoverTargetCacheEvent_.y != event.y ||
+        event.deltaX != 0.0 ||
+        event.deltaY != 0.0 ||
+        hoverTargetCacheEvent_.down != event.down ||
+        hoverTargetCacheEvent_.rightDown != event.rightDown ||
+        event.pressedThisFrame ||
+        event.releasedThisFrame ||
+        event.rightPressedThisFrame ||
+        event.rightReleasedThisFrame) {
+        return false;
+    }
+
+    return hoverTargetCacheId_.empty() || ui_.find(hoverTargetCacheId_) != nullptr;
+}
+
 template <typename Predicate>
 inline std::string Runtime::hitTest(const PointerEvent& event, float dpiScale, Predicate&& predicate) const {
     std::string targetId;
     const RenderTransform identity;
-    const std::vector<const Element*> roots = orderedElements(ui_.roots());
+    const std::vector<const Element*>& roots = orderedElements(ui_);
     for (auto it = roots.rbegin(); it != roots.rend(); ++it) {
         if (hitTestElement(**it, event, dpiScale, identity, predicate, false, {}, false, targetId)) {
             break;
@@ -115,7 +156,7 @@ inline bool Runtime::hitTestElement(
         return false;
     }
 
-    const std::vector<const Element*> children = orderedElements(element.children);
+    const std::vector<const Element*>& children = orderedElements(element);
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         if (hitTestElement(**it, event, dpiScale, renderTransform, predicate, effectiveHasClip, effectiveClip, disabledTree, targetId)) {
             return true;
@@ -159,7 +200,7 @@ inline bool Runtime::hitTestFocusableElement(
         return false;
     }
 
-    const std::vector<const Element*> children = orderedElements(element.children);
+    const std::vector<const Element*>& children = orderedElements(element);
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         if (hitTestFocusableElement(**it, event, dpiScale, renderTransform, effectiveHasClip, effectiveClip, disabledTree, targetId)) {
             return true;

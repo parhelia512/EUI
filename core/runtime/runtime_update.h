@@ -15,7 +15,7 @@ inline void Runtime::addDirtyUnion(const Rect& before, const Rect& after) {
 }
 
 inline void Runtime::promoteBackdropBlurDirtyRegions(float dpiScale) {
-    if (fullPaintRequested_ || dirtyRects_.empty()) {
+    if (fullPaintRequested_ || dirtyRects_.empty() || !ui_.hasBackdropBlur()) {
         return;
     }
 
@@ -35,7 +35,7 @@ inline void Runtime::promoteBackdropBlurDirtyRegions(float dpiScale) {
     const RenderTransform identity;
     do {
         expandedThisPass = false;
-        const std::vector<const Element*> roots = orderedElements(ui_.roots());
+        const std::vector<const Element*>& roots = orderedElements(ui_);
         for (const Element* root : roots) {
             expandBackdropBlurDirtyRegions(*root, dpiScale, identity, mergedDirty, expandedThisPass);
         }
@@ -55,6 +55,10 @@ inline void Runtime::expandBackdropBlurDirtyRegions(
     const RenderTransform& inheritedTransform,
     Rect& mergedDirty,
     bool& expanded) {
+    if (!element.subtreeHasBackdropBlur) {
+        return;
+    }
+
     const RenderTransform renderTransform = resolveRenderTransform(element, dpiScale, inheritedTransform);
     if (element.kind == ElementKind::Rect) {
         const auto instance = rects_.find(element.id);
@@ -73,7 +77,7 @@ inline void Runtime::expandBackdropBlurDirtyRegions(
         }
     }
 
-    const std::vector<const Element*> children = orderedElements(element.children);
+    const std::vector<const Element*>& children = orderedElements(element);
     for (const Element* child : children) {
         expandBackdropBlurDirtyRegions(*child, dpiScale, renderTransform, mergedDirty, expanded);
     }
@@ -170,12 +174,20 @@ inline runtime::DependentVisualState Runtime::dependentVisualStateForElement(
 }
 
 inline void Runtime::updateDependentVisualDirtyRegions(float dpiScale) {
+    if (!ui_.hasDependentVisuals()) {
+        for (const auto& item : dependentVisualStates_) {
+            addDirtyRect(item.second.rect);
+        }
+        dependentVisualStates_.clear();
+        return;
+    }
+
     for (auto& item : dependentVisualStates_) {
         item.second.seen = false;
     }
 
     const RenderTransform identity;
-    const std::vector<const Element*> roots = orderedElements(ui_.roots());
+    const std::vector<const Element*>& roots = orderedElements(ui_);
     for (const Element* root : roots) {
         updateDependentVisualDirtyRegions(*root, dpiScale, identity);
     }
@@ -194,6 +206,10 @@ inline void Runtime::updateDependentVisualDirtyRegions(
     const Element& element,
     float dpiScale,
     const RenderTransform& inheritedTransform) {
+    if (!element.subtreeHasDependentVisuals) {
+        return;
+    }
+
     if (!element.hoverOpacitySourceId.empty() || !element.visualStateSourceId.empty()) {
         const runtime::DependentVisualState current = dependentVisualStateForElement(element, dpiScale, inheritedTransform);
         auto item = dependentVisualStates_.find(element.id);
@@ -219,7 +235,7 @@ inline void Runtime::updateDependentVisualDirtyRegions(
     }
 
     const RenderTransform renderTransform = resolveRenderTransform(element, dpiScale, inheritedTransform);
-    const std::vector<const Element*> children = orderedElements(element.children);
+    const std::vector<const Element*>& children = orderedElements(element);
     for (const Element* child : children) {
         updateDependentVisualDirtyRegions(*child, dpiScale, renderTransform);
     }
@@ -227,7 +243,7 @@ inline void Runtime::updateDependentVisualDirtyRegions(
 
 template <typename Fn>
 inline void Runtime::forEachElement(Fn&& fn) const {
-    const std::vector<const Element*> roots = orderedElements(ui_.roots());
+    const std::vector<const Element*>& roots = orderedElements(ui_);
     for (const Element* root : roots) {
         forEachElement(*root, fn);
     }
@@ -236,7 +252,7 @@ inline void Runtime::forEachElement(Fn&& fn) const {
 template <typename Fn>
 inline void Runtime::forEachElement(const Element& element, Fn&& fn) {
     fn(element);
-    const std::vector<const Element*> children = orderedElements(element.children);
+    const std::vector<const Element*>& children = orderedElements(element);
     for (const Element* child : children) {
         forEachElement(*child, fn);
     }
@@ -254,6 +270,36 @@ inline std::vector<runtime::ElementSnapshot> Runtime::collectElementStructure() 
         });
     });
     return result;
+}
+
+inline bool Runtime::canReuseStaticSubtree(
+    const Element& element,
+    const PointerEvent& event,
+    float dpiScale,
+    const RenderTransform& inheritedTransform,
+    bool ancestorFrameChanged,
+    bool ancestorDisabled) const {
+    if (fullTreeUpdateRequested_ ||
+        pruneInstancesRequested_ ||
+        ancestorFrameChanged ||
+        ancestorDisabled ||
+        element.subtreeNeedsUpdate ||
+        !focusedId_.empty()) {
+        return false;
+    }
+
+    const auto cached = paintBounds_.find(element.id);
+    if (cached == paintBounds_.end() || !cached->second.hasSubtree) {
+        return false;
+    }
+
+    const Rect subtree = toPixelRect(cached->second.subtree, dpiScale);
+    if (subtree.contains(event.x, event.y)) {
+        return false;
+    }
+
+    const RenderTransform renderTransform = resolveRenderTransform(element, dpiScale, inheritedTransform);
+    return !renderTransform.active && closeEnough(renderTransform.opacity, 1.0f);
 }
 
 inline Transform Runtime::pointerRuntimeTransform(
@@ -670,7 +716,7 @@ inline void Runtime::updateElementTree(
     const std::string& hoverTargetId) {
     runtime::markEntriesUnseen(paintBounds_);
     const RenderTransform identity;
-    const std::vector<const Element*> roots = orderedElements(ui_.roots());
+    const std::vector<const Element*>& roots = orderedElements(ui_);
     for (const Element* root : roots) {
         updateElementTree(*root, event, deltaSeconds, dpiScale, hoverTargetId, identity, false, false);
     }
@@ -686,6 +732,13 @@ inline runtime::PaintBoundsInstance Runtime::updateElementTree(
     bool ancestorFrameChanged,
     bool ancestorDisabled) {
     const bool disabledTree = ancestorDisabled || element.disabled;
+    if (canReuseStaticSubtree(element, event, dpiScale, inheritedTransform, ancestorFrameChanged, disabledTree)) {
+        runtime::PaintBoundsInstance cached = paintBounds_[element.id];
+        cached.seen = true;
+        paintBounds_[element.id] = cached;
+        return cached;
+    }
+
     const bool frameTargetChanged = updateFrameTarget(element);
     updateExplicitDirtyKey(element, dpiScale, inheritedTransform);
     if (disabledTree) {
@@ -726,7 +779,7 @@ inline runtime::PaintBoundsInstance Runtime::updateElementTree(
         bounds.hasSubtree = bounds.hasOwn;
     }
 
-    const std::vector<const Element*> children = orderedElements(element.children);
+    const std::vector<const Element*>& children = orderedElements(element);
     for (const Element* child : children) {
         const runtime::PaintBoundsInstance childBounds =
             updateElementTree(*child, event, deltaSeconds, dpiScale, hoverTargetId, renderTransform, childAncestorFrameChanged, disabledTree);

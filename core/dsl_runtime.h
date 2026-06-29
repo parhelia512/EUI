@@ -99,6 +99,13 @@ private:
                            float dpiScale,
                            const std::string& hoverTargetId);
 
+    bool canReuseStaticSubtree(const Element& element,
+                               const PointerEvent& event,
+                               float dpiScale,
+                               const RenderTransform& inheritedTransform,
+                               bool ancestorFrameChanged,
+                               bool ancestorDisabled) const;
+
     runtime::PaintBoundsInstance updateElementTree(const Element& element,
                                                    const PointerEvent& event,
                                                    float deltaSeconds,
@@ -150,6 +157,10 @@ private:
     std::string hitTestFocusable(const PointerEvent& event, float dpiScale) const;
 
     std::string hitTestScrollable(const PointerEvent& event, float dpiScale) const;
+
+    std::string resolveHoverTarget(const PointerEvent& event, float dpiScale, bool inputEnabled);
+
+    bool canReuseHoverTarget(const PointerEvent& event, float dpiScale) const;
 
     template <typename Predicate>
     std::string hitTest(const PointerEvent& event, float dpiScale, Predicate&& predicate) const;
@@ -347,6 +358,13 @@ private:
     bool composeRequested_ = false;
     bool fullPaintRequested_ = true;
     bool wantsHandCursor_ = false;
+    bool fullTreeUpdateRequested_ = true;
+    bool pruneInstancesRequested_ = true;
+    bool previousFrameAnimating_ = false;
+    bool hoverTargetCacheValid_ = false;
+    PointerEvent hoverTargetCacheEvent_;
+    float hoverTargetCacheDpiScale_ = 0.0f;
+    std::string hoverTargetCacheId_;
     std::string focusedId_;
     float logicalWidth_ = 0.0f;
     float logicalHeight_ = 0.0f;

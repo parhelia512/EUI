@@ -6,7 +6,7 @@ inline void Runtime::renderDirect(core::render::RenderBackend& renderBackend, in
     const RenderTransform identity;
     const bool hasScissor = dirtyRect != nullptr;
     const Rect scissor = dirtyRect ? *dirtyRect : Rect{};
-    const std::vector<const Element*> roots = orderedElements(ui_.roots());
+    const std::vector<const Element*>& roots = orderedElements(ui_);
     for (const Element* root : roots) {
         prepareTextElement(*root, windowWidth, windowHeight, dpiScale, identity, dirtyRect, hasScissor, scissor);
     }
@@ -74,7 +74,7 @@ inline void Runtime::prepareTextElement(
         }
     }
 
-    const std::vector<const Element*> children = orderedElements(element.children);
+    const std::vector<const Element*>& children = orderedElements(element);
     for (const Element* child : children) {
         prepareTextElement(*child, windowWidth, windowHeight, dpiScale, renderTransform, dirtyRect, effectiveHasScissor, effectiveScissor);
     }
@@ -171,7 +171,7 @@ inline void Runtime::renderElement(
         }
     }
 
-    const std::vector<const Element*> children = orderedElements(element.children);
+    const std::vector<const Element*>& children = orderedElements(element);
     for (const Element* child : children) {
         renderElement(renderBackend, *child, windowWidth, windowHeight, dpiScale, renderTransform, dirtyRect, effectiveHasScissor, effectiveScissor);
     }
