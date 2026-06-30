@@ -135,7 +135,7 @@ public:
             .clip()
             .dirtyKey(InputModel::makeDirtyKey(state, focused, layout))
             .content([&] {
-                ui_.rect(hitId)
+                auto hit = ui_.rect(hitId)
                     .size(width_, height_)
                     .states(style_.background,
                             style_.background,
@@ -165,18 +165,17 @@ public:
                         } else {
                             InputModel::syncScroll(state, std::max(0.0f, width - inset * 2.0f), fontFamily, fontSize);
                         }
-                    })
-                    .onScroll([&state, allowMultiline, layout, fontSize](const core::ScrollEvent& event) {
-                        if (!allowMultiline || layout.maxVerticalScroll <= 0.0f) {
-                            return;
-                        }
+                    });
+                if (allowMultiline && layout.maxVerticalScroll > 0.0f) {
+                    hit.onScroll([&state, layout, fontSize](const core::ScrollEvent& event) {
                         const float step = std::max(12.0f, fontSize * 2.2f);
                         state.verticalScroll = std::clamp(
                             state.verticalScroll - static_cast<float>(event.y) * step,
                             0.0f,
                             layout.maxVerticalScroll);
-                    })
-                    .onTextInput([&state, allowMultiline, onChange, onEnter, width, inset, fontSize, fontFamily, textHeight](const core::KeyboardEvent& event) {
+                    });
+                }
+                hit.onTextInput([&state, allowMultiline, onChange, onEnter, width, inset, fontSize, fontFamily, textHeight](const core::KeyboardEvent& event) {
                         bool changed = false;
                         const std::string nextComposition = event.composing ? InputModel::filteredText(event.compositionText, allowMultiline) : std::string{};
                         if (state.compositionText != nextComposition) {
